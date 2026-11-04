@@ -1,0 +1,6 @@
+{
+  "name": "Anonymousnet",
+  "description": "A mobile-first anonymous social platform for confessions, thoughts, images, videos, audio and recorded moments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

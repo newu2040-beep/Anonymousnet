@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Soft outer glow circle -->
+    <path
+        android:fillColor="#33FFFFFF"
+        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- Anonymous fedora hat crown -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,43 L46,31 C47,29 50,29 54,30 C58,29 61,29 62,31 L66,43 Z" />
+    <!-- Hat brim -->
+    <path
+        android:fillColor="#E0E7FF"
+        android:pathData="M34,44 C34,42 74,42 74,44 C74,46 34,46 34,44 Z" />
+    <!-- Sunglasses left lens, bridge, right lens -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,50 h13 v8 a4,4 0 0,1 -4,4 h-5 a4,4 0 0,1 -4,-4 z M51,52 h6 v3 h-6 z M57,50 h13 v8 a4,4 0 0,1 -4,4 h-5 a4,4 0 0,1 -4,-4 z" />
+    <!-- Speech bubble badge at bottom right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M62,65 C62,60 76,60 76,65 C76,70 69,71 65,74 L65,70 C63,69 62,67 62,65 Z" />
+</vector>
