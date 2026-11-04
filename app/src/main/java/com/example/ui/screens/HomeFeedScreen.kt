@@ -264,14 +264,58 @@ fun HomeFeedScreen(
         // 5. Stream of Confession Post Cards
         when (feedState) {
             is UiState.Loading -> {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
+                items(2) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.surface
                     ) {
-                        CircularProgressIndicator(color = primaryColor)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 110.dp, height = 12.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 65.dp, height = 10.dp)
+                                            .clip(RoundedCornerShape(5.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(14.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.75f)
+                                    .height(14.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            )
+                        }
                     }
                 }
             }

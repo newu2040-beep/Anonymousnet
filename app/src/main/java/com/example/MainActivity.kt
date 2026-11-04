@@ -56,6 +56,7 @@ import com.example.ui.screens.WelcomeAuthScreen
 import com.example.ui.screens.signOutUser
 import com.example.ui.theme.AnonymousnetTheme
 import com.example.ui.theme.AppColorTheme
+import com.example.ui.theme.AppFontOption
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -89,13 +90,14 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
     val context = LocalContext.current
     val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
     var localDarkTheme by rememberSaveable { mutableStateOf(false) }
-    var selectedColorThemeName by rememberSaveable { mutableStateOf(AppColorTheme.VIOLET.name) }
+    var selectedColorThemeName by rememberSaveable { mutableStateOf(AppColorTheme.CUSTOM_ACCENT.name) }
+    var selectedFontOptionKey by rememberSaveable { mutableStateOf(AppFontOption.PLUS_JAKARTA_SANS.key) }
     var useSystemFont by rememberSaveable { mutableStateOf(false) }
     var enteredAsGuest by rememberSaveable { mutableStateOf(false) }
     var requestedInitialPermissions by rememberSaveable { mutableStateOf(false) }
 
     val selectedColorTheme = remember(selectedColorThemeName) {
-        AppColorTheme.entries.firstOrNull { it.name == selectedColorThemeName } ?: AppColorTheme.VIOLET
+        AppColorTheme.entries.firstOrNull { it.name == selectedColorThemeName } ?: AppColorTheme.CUSTOM_ACCENT
     }
 
     val initialPermissionLauncher = rememberLauncherForActivityResult(
@@ -124,7 +126,7 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
         AnonymousnetTheme(
             darkTheme = localDarkTheme,
             colorTheme = selectedColorTheme,
-            useSystemFont = useSystemFont
+            fontOption = AppFontOption.fromKey(selectedFontOptionKey)
         ) {
             WelcomeAuthScreen(
                 isDarkTheme = localDarkTheme,
@@ -165,22 +167,31 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
             if (!userAccount?.colorTheme.isNullOrBlank()) {
                 AppColorTheme.fromKey(userAccount.colorTheme)
             } else {
-                AppColorTheme.entries.firstOrNull { it.name == selectedColorThemeName } ?: AppColorTheme.VIOLET
+                AppColorTheme.entries.firstOrNull { it.name == selectedColorThemeName } ?: AppColorTheme.CUSTOM_ACCENT
             }
         }
-        val activeUseSystemFont = userAccount?.useSystemFont ?: useSystemFont
+        val activeFontOption = remember(userAccount?.fontFamily, userAccount?.useSystemFont, selectedFontOptionKey) {
+            if (userAccount?.useSystemFont == true) {
+                AppFontOption.SYSTEM_DEFAULT
+            } else if (!userAccount?.fontFamily.isNullOrBlank()) {
+                AppFontOption.fromKey(userAccount.fontFamily)
+            } else {
+                AppFontOption.fromKey(selectedFontOptionKey)
+            }
+        }
 
         AnonymousnetTheme(
             darkTheme = isDark,
             colorTheme = activeColorTheme,
-            useSystemFont = activeUseSystemFont
+            fontOption = activeFontOption
         ) {
             AuthenticatedMainScaffold(
                 viewModel = viewModel,
                 currentUserId = user.uid,
                 isDarkTheme = isDark,
                 selectedColorTheme = activeColorTheme,
-                useSystemFont = activeUseSystemFont,
+                selectedFontOption = activeFontOption,
+                useSystemFont = activeFontOption == AppFontOption.SYSTEM_DEFAULT,
                 onToggleDarkTheme = {
                     localDarkTheme = !isDark
                     viewModel.toggleThemeMode(isDark)
@@ -188,6 +199,10 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
                 onSelectColorTheme = { newTheme ->
                     selectedColorThemeName = newTheme.name
                     viewModel.setColorTheme(newTheme.key)
+                },
+                onSelectFontOption = { newFont ->
+                    selectedFontOptionKey = newFont.key
+                    viewModel.setFontOption(newFont.key)
                 },
                 onToggleSystemFont = { enabled ->
                     useSystemFont = enabled
@@ -204,9 +219,11 @@ private fun AuthenticatedMainScaffold(
     currentUserId: String,
     isDarkTheme: Boolean,
     selectedColorTheme: AppColorTheme,
+    selectedFontOption: AppFontOption,
     useSystemFont: Boolean,
     onToggleDarkTheme: () -> Unit,
     onSelectColorTheme: (AppColorTheme) -> Unit,
+    onSelectFontOption: (AppFontOption) -> Unit,
     onToggleSystemFont: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -555,9 +572,11 @@ private fun AuthenticatedMainScaffold(
                             followingCount = followingList.size,
                             isDarkTheme = isDarkTheme,
                             selectedColorTheme = selectedColorTheme,
+                            selectedFontOption = selectedFontOption,
                             useSystemFont = useSystemFont,
                             onToggleDarkTheme = onToggleDarkTheme,
                             onSelectColorTheme = onSelectColorTheme,
+                            onSelectFontOption = onSelectFontOption,
                             onToggleSystemFont = onToggleSystemFont,
                             onUpdatePrivacyDefaults = { keepAnon, notifs ->
                                 viewModel.updatePrivacyDefaults(keepAnon, notifs)
@@ -583,13 +602,15 @@ private fun AuthenticatedMainScaffold(
                 }
             }
 
-            // Floating Rounded Bottom Bar (consistent geometry and icon order across Feed, Create, Explore, Activity, Profile)
-            AnonymousnetBottomBar(
-                currentTab = currentTab,
-                unreadNotificationCount = unreadNotificationsCount,
-                onSelectTab = { viewModel.selectTab(it) },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+            // Floating Rounded Bottom Bar (only shown on the 5 main tabs so it never covers sub-screens or action buttons)
+            if (activeSubScreen == null) {
+                AnonymousnetBottomBar(
+                    currentTab = currentTab,
+                    unreadNotificationCount = unreadNotificationsCount,
+                    onSelectTab = { viewModel.selectTab(it) },
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
         }
     }
 }

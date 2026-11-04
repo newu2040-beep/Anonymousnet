@@ -39,6 +39,7 @@ service cloud.firestore {
              (data.themeMode == 'light' || data.themeMode == 'dark' || data.themeMode == 'system') &&
              (!('colorTheme' in data) || data.colorTheme == null || (data.colorTheme is string && data.colorTheme.size() <= 32)) &&
              (!('useSystemFont' in data) || data.useSystemFont is bool) &&
+             (!('fontFamily' in data) || data.fontFamily == null || (data.fontFamily is string && data.fontFamily.size() <= 32)) &&
              data.keepAnonymousDefault is bool &&
              data.notificationsEnabled is bool &&
              (!('mutedTopics' in data) || data.mutedTopics == null || (data.mutedTopics is string && data.mutedTopics.size() <= 500)) &&
@@ -46,9 +47,9 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
-    function isValidPublicProfile(data) {
+    function isValidPublicProfile(data, docUserId) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
-             data.userId == request.auth.uid &&
+             data.userId == docUserId &&
              data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
              data.anonymousHandle is string && data.anonymousHandle.size() >= 2 && data.anonymousHandle.size() <= 40 &&
              data.avatarKey is string && data.avatarKey.size() >= 1 && data.avatarKey.size() <= 64 &&
@@ -153,9 +154,9 @@ service cloud.firestore {
              data.createdAt is timestamp && data.createdAt <= request.time;
     }
 
-    function isValidUserNotification(data) {
+    function isValidUserNotification(data, recipientUid) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
-             data.userId == request.auth.uid &&
+             data.userId == recipientUid &&
              data.type is string && data.type.size() <= 24 &&
              (data.type == 'comment' || data.type == 'like' || data.type == 'follow' || data.type == 'dm_request' || data.type == 'dm_message' || data.type == 'moderation' || data.type == 'security' || data.type == 'system') &&
              data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
@@ -198,7 +199,7 @@ service cloud.firestore {
                        isValidId(userId) &&
                        request.auth.uid == userId &&
                        incoming().keys().hasAll(['userId', 'authProvider', 'accountState', 'guest', 'themeMode', 'keepAnonymousDefault', 'notificationsEnabled', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'authProvider', 'accountState', 'guest', 'themeMode', 'colorTheme', 'useSystemFont', 'keepAnonymousDefault', 'notificationsEnabled', 'mutedTopics', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'authProvider', 'accountState', 'guest', 'themeMode', 'colorTheme', 'useSystemFont', 'fontFamily', 'keepAnonymousDefault', 'notificationsEnabled', 'mutedTopics', 'createdAt', 'updatedAt']) &&
                        isValidUserAccount(incoming());
 
       allow update: if isSignedIn() &&
@@ -207,7 +208,7 @@ service cloud.firestore {
                        request.auth.uid == userId &&
                        incoming().userId == existing().userId &&
                        incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['authProvider', 'accountState', 'guest', 'themeMode', 'colorTheme', 'useSystemFont', 'keepAnonymousDefault', 'notificationsEnabled', 'mutedTopics', 'updatedAt']);
+                       incoming().diff(existing()).affectedKeys().hasOnly(['authProvider', 'accountState', 'guest', 'themeMode', 'colorTheme', 'useSystemFont', 'fontFamily', 'keepAnonymousDefault', 'notificationsEnabled', 'mutedTopics', 'updatedAt']);
 
       allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
 
@@ -289,10 +290,10 @@ service cloud.firestore {
                          isValidId(notificationId) &&
                          incoming().keys().hasAll(['userId', 'type', 'title', 'body', 'targetId', 'isRead', 'createdAt', 'updatedAt']) &&
                          incoming().keys().hasOnly(['userId', 'type', 'title', 'body', 'targetId', 'isRead', 'createdAt', 'updatedAt']) &&
-                         isValidUserNotification(incoming());
+                         isValidUserNotification(incoming(), userId);
 
         allow update: if isSignedIn() &&
-                         isValidUserNotification(incoming()) &&
+                         isValidUserNotification(incoming(), userId) &&
                          isValidId(userId) &&
                          isValidId(notificationId) &&
                          request.auth.uid == userId &&
@@ -314,10 +315,10 @@ service cloud.firestore {
                        request.auth.uid == userId &&
                        incoming().keys().hasAll(['userId', 'displayName', 'anonymousHandle', 'avatarKey', 'isVerified', 'postCount', 'viewCount', 'likeCount', 'createdAt', 'updatedAt']) &&
                        incoming().keys().hasOnly(['userId', 'displayName', 'anonymousHandle', 'avatarKey', 'isVerified', 'postCount', 'viewCount', 'likeCount', 'followersCount', 'followingCount', 'createdAt', 'updatedAt']) &&
-                       isValidPublicProfile(incoming());
+                       isValidPublicProfile(incoming(), userId);
 
       allow update: if isSignedIn() &&
-                       isValidPublicProfile(incoming()) &&
+                       isValidPublicProfile(incoming(), userId) &&
                        isValidId(userId) &&
                        (request.auth.uid == userId || (incoming().userId == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['followersCount', 'followingCount', 'updatedAt']))) &&
                        incoming().userId == existing().userId &&

@@ -100,6 +100,7 @@ import com.example.ui.components.PushNotificationHelper
 import com.example.ui.theme.AnonHeartRed
 import com.example.ui.theme.AnonStarGold
 import com.example.ui.theme.AppColorTheme
+import com.example.ui.theme.AppFontOption
 
 /**
  * Screen 5 — Profile and Settings
@@ -122,10 +123,12 @@ fun ProfileSettingsScreen(
     followingCount: Int,
     isDarkTheme: Boolean,
     selectedColorTheme: AppColorTheme,
-    useSystemFont: Boolean,
+    selectedFontOption: AppFontOption = AppFontOption.PLUS_JAKARTA_SANS,
+    useSystemFont: Boolean = false,
     onToggleDarkTheme: () -> Unit,
     onSelectColorTheme: (AppColorTheme) -> Unit,
-    onToggleSystemFont: (Boolean) -> Unit,
+    onSelectFontOption: (AppFontOption) -> Unit = {},
+    onToggleSystemFont: (Boolean) -> Unit = {},
     onUpdatePrivacyDefaults: (keepAnon: Boolean, notifs: Boolean) -> Unit,
     onLinkGuestAccount: () -> Unit,
     onNavigateSubScreen: (SubScreen) -> Unit,
@@ -212,11 +215,11 @@ fun ProfileSettingsScreen(
         multiPermissionLauncher.launch(perms.toTypedArray())
     }
 
-    val displayPosts = if (myPostsCount > 0) (24L + myPostsCount - 6L).coerceAtLeast(myPostsCount.toLong()) else (publicProfile?.postCount ?: 24L)
-    val displayViews = publicProfile?.viewCount ?: 12500L
-    val displayLikes = publicProfile?.likeCount ?: 8700L
-    val displayFollowers = publicProfile?.followersCount ?: 142L
-    val displayFollowing = if (followingCount > 0) followingCount.toLong() else (publicProfile?.followingCount ?: 38L)
+    val displayPosts = (publicProfile?.postCount ?: myPostsCount.toLong()).coerceAtLeast(myPostsCount.toLong())
+    val displayViews = publicProfile?.viewCount ?: 0L
+    val displayLikes = publicProfile?.likeCount ?: 0L
+    val displayFollowers = publicProfile?.followersCount ?: 0L
+    val displayFollowing = (publicProfile?.followingCount ?: followingCount.toLong()).coerceAtLeast(followingCount.toLong())
 
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(
@@ -449,172 +452,14 @@ fun ProfileSettingsScreen(
                         .padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text(
-                        text = "App Theme & Appearance",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
+                    AppearanceCustomizationCardContent(
+                        isDarkTheme = isDarkTheme,
+                        selectedColorTheme = selectedColorTheme,
+                        selectedFontOption = selectedFontOption,
+                        onToggleDarkTheme = onToggleDarkTheme,
+                        onSelectColorTheme = onSelectColorTheme,
+                        onSelectFontOption = onSelectFontOption
                     )
-
-                    // Dark & Light Mode Toggle Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = if (isDarkTheme) "Dark Mode" else "Light Mode",
-                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Consistent theme across entire application",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Switch(
-                            checked = isDarkTheme,
-                            onCheckedChange = { onToggleDarkTheme() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag("settings_dark_light_switch")
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-                    // System Font Option Toggle Switch
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.FontDownload,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Use System Font",
-                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (useSystemFont) "Device System Default Font" else "Plus Jakarta Sans",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Switch(
-                            checked = useSystemFont,
-                            onCheckedChange = { onToggleSystemFont(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.testTag("settings_system_font_switch")
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-                    // App Color Theme Swatches
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.Palette,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Color Palette (${selectedColorTheme.displayName})",
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            AppColorTheme.entries.forEach { themeOption ->
-                                val isSelected = themeOption == selectedColorTheme
-                                Surface(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .clickable { onSelectColorTheme(themeOption) }
-                                        .testTag("theme_chip_${themeOption.name.lowercase()}"),
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = if (isSelected) {
-                                        themeOption.primary.copy(alpha = 0.16f)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                                    }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(20.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    Brush.linearGradient(
-                                                        colors = listOf(
-                                                            themeOption.primary,
-                                                            themeOption.secondaryLight
-                                                        )
-                                                    )
-                                                )
-                                                .border(
-                                                    width = if (isSelected) 2.dp else 0.dp,
-                                                    color = Color.White,
-                                                    shape = CircleShape
-                                                ),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSelected) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Check,
-                                                    contentDescription = null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(12.dp)
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = themeOption.displayName,
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = if (isSelected) themeOption.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
 
@@ -1004,6 +849,18 @@ fun ProfileSettingsScreen(
                     ) {
                         Text("Delete Account & Data", color = AnonHeartRed)
                     }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+                    // Dedicated Appearance Customization Section
+                    AppearanceCustomizationCardContent(
+                        isDarkTheme = isDarkTheme,
+                        selectedColorTheme = selectedColorTheme,
+                        selectedFontOption = selectedFontOption,
+                        onToggleDarkTheme = onToggleDarkTheme,
+                        onSelectColorTheme = onSelectColorTheme,
+                        onSelectFontOption = onSelectFontOption
+                    )
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 
@@ -1480,5 +1337,221 @@ private fun formatCompactCount(count: Long): String {
         count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
         count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
         else -> count.toString()
+    }
+}
+
+@Composable
+fun AppearanceCustomizationCardContent(
+    isDarkTheme: Boolean,
+    selectedColorTheme: AppColorTheme,
+    selectedFontOption: AppFontOption,
+    onToggleDarkTheme: () -> Unit,
+    onSelectColorTheme: (AppColorTheme) -> Unit,
+    onSelectFontOption: (AppFontOption) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text(
+            text = "App Theme & Appearance",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        // Dark & Light Mode Toggle Switch
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isDarkTheme) Icons.Filled.DarkMode else Icons.Filled.LightMode,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = if (isDarkTheme) "Dark Mode" else "Light Mode",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Consistent theme across entire application",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Switch(
+                checked = isDarkTheme,
+                onCheckedChange = { onToggleDarkTheme() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier.testTag("settings_dark_light_switch")
+            )
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+        // Typography Selection (7 options: Inter, Roboto, Poppins, Manrope, Nunito Sans, Plus Jakarta Sans, System Default)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.FontDownload,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Typography (${selectedFontOption.displayName})",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AppFontOption.entries.forEach { fontOption ->
+                    val isSelected = fontOption == selectedFontOption
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onSelectFontOption(fontOption) }
+                            .testTag("font_chip_${fontOption.key}"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) {
+                            selectedColorTheme.primary.copy(alpha = 0.16f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        },
+                        border = if (isSelected) {
+                            androidx.compose.foundation.BorderStroke(1.5.dp, selectedColorTheme.primary)
+                        } else null
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = selectedColorTheme.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            Text(
+                                text = fontOption.displayName,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontFamily = fontOption.fontFamily,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                ),
+                                color = if (isSelected) selectedColorTheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+        // App Color Theme Swatches (10 options: Custom Accent, Pure White, Soft Cream, Minimal Gray, Midnight Black, Ocean Blue, Mint Green, Lavender, Rose Pink, Warm Sand)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Color Palette (${selectedColorTheme.displayName})",
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                AppColorTheme.entries.forEach { themeOption ->
+                    val isSelected = themeOption == selectedColorTheme
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onSelectColorTheme(themeOption) }
+                            .testTag("theme_chip_${themeOption.key}"),
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) {
+                            themeOption.primary.copy(alpha = 0.16f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        },
+                        border = if (isSelected) {
+                            androidx.compose.foundation.BorderStroke(1.5.dp, themeOption.primary)
+                        } else null
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                themeOption.primary,
+                                                themeOption.secondaryLight
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) Color.White else Color.Transparent,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = themeOption.displayName,
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                ),
+                                color = if (isSelected) themeOption.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

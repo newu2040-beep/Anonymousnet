@@ -20,7 +20,8 @@ val AnonymousnetShapes = Shapes(
 @Composable
 fun AnonymousnetTheme(
     darkTheme: Boolean = false,
-    colorTheme: AppColorTheme = AppColorTheme.VIOLET,
+    colorTheme: AppColorTheme = AppColorTheme.CUSTOM_ACCENT,
+    fontOption: AppFontOption = AppFontOption.PLUS_JAKARTA_SANS,
     useSystemFont: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -66,8 +67,12 @@ fun AnonymousnetTheme(
         }
     }
 
-    val typography = remember(useSystemFont) {
-        buildAppTypography(useSystemFont = useSystemFont)
+    val effectiveFont = remember(fontOption, useSystemFont) {
+        if (useSystemFont) AppFontOption.SYSTEM_DEFAULT else fontOption
+    }
+
+    val typography = remember(effectiveFont) {
+        buildAppTypography(effectiveFont)
     }
 
     MaterialTheme(

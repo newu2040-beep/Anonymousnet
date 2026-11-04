@@ -46,8 +46,9 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     accountState = "active",
                     guest = guestMode,
                     themeMode = "light",
-                    colorTheme = "violet",
+                    colorTheme = "custom_accent",
                     useSystemFont = false,
+                    fontFamily = "plus_jakarta_sans",
                     keepAnonymousDefault = true,
                     notificationsEnabled = true,
                     mutedTopics = ""
@@ -64,11 +65,11 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     anonymousHandle = "@$initialHandle",
                     avatarKey = "hooded_violet",
                     isVerified = true,
-                    postCount = 24L,
-                    viewCount = 12500L,
-                    likeCount = 8700L,
-                    followersCount = 142L,
-                    followingCount = 38L
+                    postCount = 0L,
+                    viewCount = 0L,
+                    likeCount = 0L,
+                    followersCount = 0L,
+                    followingCount = 0L
                 )
                 profileRef.set(profile.toCreateMap()).await()
 
@@ -137,6 +138,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
         themeMode: String? = null,
         colorTheme: String? = null,
         useSystemFont: Boolean? = null,
+        fontFamily: String? = null,
         keepAnonymousDefault: Boolean? = null,
         notificationsEnabled: Boolean? = null,
         mutedTopics: String? = null,
@@ -151,6 +153,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
             if (themeMode != null) updates["themeMode"] = themeMode
             if (colorTheme != null) updates["colorTheme"] = colorTheme
             if (useSystemFont != null) updates["useSystemFont"] = useSystemFont
+            if (fontFamily != null) updates["fontFamily"] = fontFamily
             if (keepAnonymousDefault != null) updates["keepAnonymousDefault"] = keepAnonymousDefault
             if (notificationsEnabled != null) updates["notificationsEnabled"] = notificationsEnabled
             if (mutedTopics != null) updates["mutedTopics"] = mutedTopics
@@ -452,11 +455,10 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
             if (isCurrentlyLiked) {
                 batch.delete(postLikeRef)
                 batch.delete(userLikedRef)
-                val nextLikes = (post.likeCount - 1L).coerceAtLeast(0L)
                 batch.update(
                     postRef,
                     mapOf(
-                        "likeCount" to nextLikes,
+                        "likeCount" to FieldValue.increment(-1),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
@@ -481,7 +483,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                 batch.update(
                     postRef,
                     mapOf(
-                        "likeCount" to (post.likeCount + 1L),
+                        "likeCount" to FieldValue.increment(1),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
@@ -1016,136 +1018,6 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    suspend fun seedInitialConfessionsIfNeeded(): Result<Unit> {
-        val uid = requireUserId()
-        val postsPath = "posts"
-        return try {
-            val existing = db.collection(postsPath)
-                .whereEqualTo("status", "published")
-                .limit(1)
-                .get()
-                .await()
-            if (!existing.isEmpty) {
-                return Result.success(Unit)
-            }
-
-            val seedItems = listOf(
-                ConfessionPost(
-                    id = "seed_post_1",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_2h",
-                    isAnonymous = true,
-                    text = "Sometimes I just want to run away from everything... 💔",
-                    type = "text",
-                    category = "Feelings",
-                    topics = "life,feelings,honest",
-                    status = "published",
-                    likeCount = 842L,
-                    commentCount = 214L,
-                    viewCount = 3400L
-                ),
-                ConfessionPost(
-                    id = "seed_post_2",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_3h",
-                    isAnonymous = true,
-                    text = "Life is better with good coffee and good vibes. ☕✨",
-                    type = "text",
-                    category = "Coffee",
-                    topics = "coffee,vibes,gratitude",
-                    status = "published",
-                    likeCount = 627L,
-                    commentCount = 128L,
-                    viewCount = 2150L
-                ),
-                ConfessionPost(
-                    id = "seed_explore_1",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_sunset",
-                    isAnonymous = true,
-                    text = "Watching the purple sunset sky made me realize it is okay to let go of old chapters and start fresh.",
-                    type = "image",
-                    category = "Life",
-                    mediaUri = "preset://sunset_sky",
-                    mediaCaption = "Just let it go... ❤️",
-                    topics = "healing,sunset,peace",
-                    status = "published",
-                    likeCount = 1200L,
-                    commentCount = 389L,
-                    viewCount = 4800L
-                ),
-                ConfessionPost(
-                    id = "seed_explore_2",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_latte",
-                    isAnonymous = true,
-                    text = "Quiet mornings with warm latte art before the world wakes up are my secret therapy.",
-                    type = "image",
-                    category = "Coffee",
-                    mediaUri = "preset://coffee_cup",
-                    mediaCaption = "Coffee heals everything ☕",
-                    topics = "coffee,morning,calm",
-                    status = "published",
-                    likeCount = 892L,
-                    commentCount = 176L,
-                    viewCount = 2900L
-                ),
-                ConfessionPost(
-                    id = "seed_explore_3",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_dreamer",
-                    isAnonymous = true,
-                    text = "No one in my circle knows I have been secretly building my own studio after work every night. Dream big... ✨",
-                    type = "video",
-                    category = "Dreams",
-                    mediaUri = "preset://dream_silhouette",
-                    mediaCaption = "Dream big... ✨",
-                    mediaDurationSec = 42L,
-                    topics = "dreams,ambition,night",
-                    status = "published",
-                    likeCount = 764L,
-                    commentCount = 132L,
-                    viewCount = 2400L
-                ),
-                ConfessionPost(
-                    id = "seed_explore_4",
-                    authorUid = uid,
-                    anonymousLabel = "Anonymous",
-                    anonymousHandle = "@anon_birds",
-                    isAnonymous = true,
-                    text = "Recorded the calm evening breeze by the coast today. Choosing happiness one breath at a time.",
-                    type = "audio",
-                    category = "Mindfulness",
-                    mediaUri = "preset://birds_sky",
-                    mediaCaption = "Be happy ❤️",
-                    mediaDurationSec = 28L,
-                    topics = "happiness,mindfulness,audio",
-                    status = "published",
-                    likeCount = 621L,
-                    commentCount = 98L,
-                    viewCount = 1950L
-                )
-            )
-
-            val batch = db.batch()
-            for (item in seedItems) {
-                val ref = db.collection(postsPath).document(item.id)
-                batch.set(ref, item.toCreateMap())
-            }
-            batch.commit().await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, postsPath)
-            Result.failure(e)
-        }
-    }
 
     suspend fun deleteAccountAndData(): Result<Unit> {
         val uid = requireUserId()

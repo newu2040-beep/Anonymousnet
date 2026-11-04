@@ -225,14 +225,44 @@ fun ExploreScreen(
         // 4. Two-Column Visual Grid
         when (explorePostsState) {
             is UiState.Loading -> {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
+                items(2) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        CircularProgressIndicator(color = primaryColor)
+                        repeat(2) {
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(210.dp),
+                                shape = RoundedCornerShape(22.dp),
+                                color = MaterialTheme.colorScheme.surface
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    contentAlignment = Alignment.BottomStart
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.8f)
+                                                .height(12.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.5f)
+                                                .height(10.dp)
+                                                .clip(RoundedCornerShape(5.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

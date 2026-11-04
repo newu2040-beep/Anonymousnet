@@ -8,6 +8,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
+val InterFontFamily = FontFamily(
+    Font(R.font.inter, FontWeight.Normal),
+    Font(R.font.inter, FontWeight.Medium),
+    Font(R.font.inter, FontWeight.SemiBold),
+    Font(R.font.inter, FontWeight.Bold)
+)
+
+val RobotoFontFamily = FontFamily(
+    Font(R.font.roboto, FontWeight.Normal),
+    Font(R.font.roboto, FontWeight.Medium),
+    Font(R.font.roboto, FontWeight.SemiBold),
+    Font(R.font.roboto, FontWeight.Bold)
+)
+
+val PoppinsFontFamily = FontFamily(
+    Font(R.font.poppins, FontWeight.Normal),
+    Font(R.font.poppins, FontWeight.Medium),
+    Font(R.font.poppins, FontWeight.SemiBold),
+    Font(R.font.poppins, FontWeight.Bold)
+)
+
+val ManropeFontFamily = FontFamily(
+    Font(R.font.manrope, FontWeight.Normal),
+    Font(R.font.manrope, FontWeight.Medium),
+    Font(R.font.manrope, FontWeight.SemiBold),
+    Font(R.font.manrope, FontWeight.Bold)
+)
+
+val NunitoSansFontFamily = FontFamily(
+    Font(R.font.nunito_sans, FontWeight.Normal),
+    Font(R.font.nunito_sans, FontWeight.Medium),
+    Font(R.font.nunito_sans, FontWeight.SemiBold),
+    Font(R.font.nunito_sans, FontWeight.Bold)
+)
+
 val PlusJakartaSansFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans, FontWeight.Normal),
     Font(R.font.plus_jakarta_sans, FontWeight.Medium),
@@ -15,8 +50,37 @@ val PlusJakartaSansFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans, FontWeight.Bold)
 )
 
-fun buildAppTypography(useSystemFont: Boolean): Typography {
-    val activeFont = if (useSystemFont) FontFamily.Default else PlusJakartaSansFontFamily
+enum class AppFontOption(
+    val key: String,
+    val displayName: String,
+    val fontFamily: FontFamily
+) {
+    PLUS_JAKARTA_SANS("plus_jakarta_sans", "Plus Jakarta", PlusJakartaSansFontFamily),
+    INTER("inter", "Inter", InterFontFamily),
+    ROBOTO("roboto", "Roboto", RobotoFontFamily),
+    POPPINS("poppins", "Poppins", PoppinsFontFamily),
+    MANROPE("manrope", "Manrope", ManropeFontFamily),
+    NUNITO_SANS("nunito_sans", "Nunito Sans", NunitoSansFontFamily),
+    SYSTEM_DEFAULT("system_default", "System Default", FontFamily.Default);
+
+    companion object {
+        fun fromKey(key: String?): AppFontOption {
+            return when (key?.lowercase()) {
+                "inter" -> INTER
+                "roboto" -> ROBOTO
+                "poppins" -> POPPINS
+                "manrope" -> MANROPE
+                "nunito_sans" -> NUNITO_SANS
+                "system_default", "system" -> SYSTEM_DEFAULT
+                "plus_jakarta_sans", "plus_jakarta" -> PLUS_JAKARTA_SANS
+                else -> PLUS_JAKARTA_SANS
+            }
+        }
+    }
+}
+
+fun buildAppTypography(fontOption: AppFontOption = AppFontOption.PLUS_JAKARTA_SANS): Typography {
+    val activeFont = fontOption.fontFamily
     return Typography(
         headlineLarge = TextStyle(
             fontFamily = activeFont,
@@ -77,4 +141,4 @@ fun buildAppTypography(useSystemFont: Boolean): Typography {
     )
 }
 
-val Typography = buildAppTypography(useSystemFont = false)
+val Typography = buildAppTypography()

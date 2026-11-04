@@ -339,7 +339,6 @@ class AnonymousnetViewModel(
     init {
         viewModelScope.launch {
             repository.ensureUserAndPublicProfile(guestMode = initialGuestMode)
-            repository.seedInitialConfessionsIfNeeded()
         }
     }
 
@@ -697,7 +696,15 @@ class AnonymousnetViewModel(
 
     fun setUseSystemFont(useSys: Boolean) {
         viewModelScope.launch {
-            repository.updateUserPreferences(useSystemFont = useSys)
+            val fontKey = if (useSys) "system_default" else "plus_jakarta_sans"
+            repository.updateUserPreferences(useSystemFont = useSys, fontFamily = fontKey)
+        }
+    }
+
+    fun setFontOption(fontKey: String) {
+        viewModelScope.launch {
+            val useSys = fontKey.equals("system_default", ignoreCase = true)
+            repository.updateUserPreferences(useSystemFont = useSys, fontFamily = fontKey)
         }
     }
 
