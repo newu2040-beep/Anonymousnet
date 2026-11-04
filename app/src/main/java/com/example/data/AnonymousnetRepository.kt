@@ -46,6 +46,8 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     accountState = "active",
                     guest = guestMode,
                     themeMode = "light",
+                    colorTheme = "violet",
+                    useSystemFont = false,
                     keepAnonymousDefault = true,
                     notificationsEnabled = true,
                     mutedTopics = ""
@@ -55,19 +57,33 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
             val profileSnap = profileRef.get().await()
             if (!profileSnap.exists()) {
                 val suffix = uid.take(4).lowercase().filter { it.isLetterOrDigit() }.ifEmpty { "user" }
+                val initialHandle = "anon_$suffix"
                 val profile = PublicProfile(
                     userId = uid,
                     displayName = "Anonymousnet",
-                    anonymousHandle = "@anon_$suffix",
+                    anonymousHandle = "@$initialHandle",
                     avatarKey = "hooded_violet",
                     isVerified = true,
                     postCount = 24L,
                     viewCount = 12500L,
-                    likeCount = 8700L
+                    likeCount = 8700L,
+                    followersCount = 142L,
+                    followingCount = 38L
                 )
                 profileRef.set(profile.toCreateMap()).await()
 
-                // Create welcome notification
+                val usernameRef = db.collection("usernames").document(initialHandle)
+                val usernameSnap = usernameRef.get().await()
+                if (!usernameSnap.exists()) {
+                    usernameRef.set(
+                        mapOf(
+                            "uid" to uid,
+                            "handle" to initialHandle,
+                            "createdAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                }
+
                 val notifId = "welcome_${uid.take(8)}"
                 val notifRef = userRef.collection("notifications").document(notifId)
                 val welcomeNotif = UserNotification(
@@ -119,6 +135,8 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
 
     suspend fun updateUserPreferences(
         themeMode: String? = null,
+        colorTheme: String? = null,
+        useSystemFont: Boolean? = null,
         keepAnonymousDefault: Boolean? = null,
         notificationsEnabled: Boolean? = null,
         mutedTopics: String? = null,
@@ -131,6 +149,8 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             if (themeMode != null) updates["themeMode"] = themeMode
+            if (colorTheme != null) updates["colorTheme"] = colorTheme
+            if (useSystemFont != null) updates["useSystemFont"] = useSystemFont
             if (keepAnonymousDefault != null) updates["keepAnonymousDefault"] = keepAnonymousDefault
             if (notificationsEnabled != null) updates["notificationsEnabled"] = notificationsEnabled
             if (mutedTopics != null) updates["mutedTopics"] = mutedTopics
@@ -148,29 +168,122 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
         }
     }
 
+    fun normalizeHandle(raw: String): String {
+        return raw.trim()
+            .removePrefix("@")
+            .lowercase()
+            .filter { it.isLetterOrDigit() || it == '_' }
+    }
+
+    fun isValidHandleFormat(handle: String): Boolean {
+        return handle.length in 3..30 && handle.all { it.isLetterOrDigit() || it == '_' }
+    }
+
+    suspend fun checkUsernameAvailability(rawHandle: String): Result<UsernameAvailability> {
+        val uid = requireUserId()
+        val normalized = normalizeHandle(rawHandle)
+        if (normalized.isEmpty()) {
+            return Result.success(UsernameAvailability.Empty)
+        }
+        if (normalized.length < 3) {
+            return Result.success(UsernameAvailability.InvalidFormat("Must be at least 3 characters"))
+        }
+        if (normalized.length > 30) {
+            return Result.success(UsernameAvailability.InvalidFormat("Must be 30 characters or fewer"))
+        }
+        return try {
+            val snap = db.collection("usernames").document(normalized).get().await()
+            if (!snap.exists()) {
+                Result.success(UsernameAvailability.Available(normalized))
+            } else {
+                val ownerUid = snap.getString("uid")
+                if (ownerUid == uid) {
+                    Result.success(UsernameAvailability.IsCurrentUser(normalized))
+                } else {
+                    Result.success(UsernameAvailability.Taken(normalized))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, "usernames/$normalized")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateUsernameAndDisplayName(
+        newRawHandle: String,
+        newDisplayName: String,
+        newAvatarKey: String? = null
+    ): Result<Unit> {
+        val uid = requireUserId()
+        val newNormalized = normalizeHandle(newRawHandle)
+        if (!isValidHandleFormat(newNormalized)) {
+            return Result.failure(IllegalArgumentException("Username must be 3-30 letters, numbers, or underscores."))
+        }
+        val cleanDisplayName = newDisplayName.trim().take(60).ifEmpty { "Anonymousnet" }
+        val profileRef = db.collection("publicProfiles").document(uid)
+
+        return try {
+            val profileSnap = profileRef.get().await()
+            val currentHandle = profileSnap.getString("anonymousHandle")?.removePrefix("@")?.lowercase() ?: ""
+
+            if (currentHandle == newNormalized) {
+                val updates = mutableMapOf<String, Any>(
+                    "displayName" to cleanDisplayName,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                if (newAvatarKey != null) updates["avatarKey"] = newAvatarKey
+                profileRef.update(updates).await()
+                return Result.success(Unit)
+            }
+
+            val targetDocRef = db.collection("usernames").document(newNormalized)
+            val targetSnap = targetDocRef.get().await()
+            if (targetSnap.exists() && targetSnap.getString("uid") != uid) {
+                return Result.failure(IllegalStateException("Username '@$newNormalized' is already taken."))
+            }
+
+            val batch = db.batch()
+            batch.set(
+                targetDocRef,
+                mapOf(
+                    "uid" to uid,
+                    "handle" to newNormalized,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            )
+            if (currentHandle.isNotEmpty() && currentHandle != "anon_user" && currentHandle != newNormalized) {
+                val oldDocRef = db.collection("usernames").document(currentHandle)
+                batch.delete(oldDocRef)
+            }
+            val profileUpdates = mutableMapOf<String, Any>(
+                "displayName" to cleanDisplayName,
+                "anonymousHandle" to "@$newNormalized",
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (newAvatarKey != null) profileUpdates["avatarKey"] = newAvatarKey
+            batch.update(profileRef, profileUpdates)
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "usernames/$newNormalized")
+            Result.failure(e)
+        }
+    }
+
     suspend fun updatePublicProfileHandle(
         displayName: String,
         anonymousHandle: String,
         avatarKey: String
     ): Result<Unit> {
-        val uid = requireUserId()
-        val docRef = db.collection("publicProfiles").document(uid)
-        return try {
-            docRef.update(
-                mapOf(
-                    "displayName" to displayName.trim().take(60).ifEmpty { "Anonymousnet" },
-                    "anonymousHandle" to anonymousHandle.trim().take(40).ifEmpty { "@anon_user" },
-                    "avatarKey" to avatarKey,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
-            Result.failure(e)
-        }
+        return updateUsernameAndDisplayName(
+            newRawHandle = anonymousHandle,
+            newDisplayName = displayName,
+            newAvatarKey = avatarKey
+        )
     }
 
     // --- 2. Confession Posts (Feed, Explore, Drafts, My Posts) ---
@@ -207,17 +320,16 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
     }
 
     suspend fun getPostById(postId: String): Result<ConfessionPost?> {
-        val docRef = db.collection("posts").document(postId)
         return try {
-            val snap = docRef.get().await()
-            val post = if (snap.exists()) {
-                snap.toObject(ConfessionPost::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
-            } else null
-            Result.success(post)
-        } catch (e: CancellationException) {
-            throw e
+            val snapshot = db.collection("posts").document(postId).get().await()
+            if (snapshot.exists()) {
+                Result.success(snapshot.toObject(ConfessionPost::class.java)?.copy(id = snapshot.id))
+            } else {
+                Result.success(null)
+            }
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.GET, docRef.path)
+            if (e is CancellationException) throw e
+            handleFirestoreError(e, OperationType.GET, "posts/$postId")
             Result.failure(e)
         }
     }
@@ -225,6 +337,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
     suspend fun createPost(
         text: String,
         type: String = "text",
+        category: String = "General",
         isAnonymous: Boolean = true,
         anonymousLabel: String = "Anonymous",
         anonymousHandle: String = "@anon_user",
@@ -244,7 +357,6 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
         val postId = customDocId ?: "post_${UUID.randomUUID().toString().replace("-", "").take(16)}"
         val docRef = db.collection("posts").document(postId)
         return try {
-            // Simple automated safety triage screening per Section 9 of specification
             val lower = text.lowercase()
             val flaggedKeywords = listOf("kill yourself", "bomb threat", "doxx", "ssn:")
             val finalStatus = if (status == "published" && flaggedKeywords.any { lower.contains(it) }) {
@@ -261,6 +373,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                 isAnonymous = isAnonymous,
                 text = text.trim().take(2000),
                 type = type,
+                category = category.trim().take(60).ifBlank { "General" },
                 mediaUri = mediaUri?.takeIf { it.isNotBlank() },
                 mediaCaption = mediaCaption?.takeIf { it.isNotBlank() },
                 mediaDurationSec = mediaDurationSec,
@@ -278,31 +391,6 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, docRef.path)
-            Result.failure(e)
-        }
-    }
-
-    suspend fun updatePostTextOrStatus(
-        postId: String,
-        newText: String? = null,
-        newStatus: String? = null,
-        newTopics: String? = null
-    ): Result<Unit> {
-        requireUserId()
-        val docRef = db.collection("posts").document(postId)
-        return try {
-            val updates = mutableMapOf<String, Any>(
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            if (newText != null) updates["text"] = newText.trim().take(2000)
-            if (newStatus != null) updates["status"] = newStatus
-            if (newTopics != null) updates["topics"] = newTopics.trim().take(300)
-            docRef.update(updates).await()
-            Result.success(Unit)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
             Result.failure(e)
         }
     }
@@ -397,6 +485,20 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
+
+                // Notify post author if not self
+                if (post.authorUid != uid) {
+                    val notifRef = db.collection("users").document(post.authorUid).collection("notifications").document("like_${post.id.take(8)}_$uid")
+                    val notif = UserNotification(
+                        userId = post.authorUid,
+                        type = "like",
+                        title = "New Confession Like",
+                        body = "Someone resonated with your anonymous confession.",
+                        targetId = post.id,
+                        isRead = false
+                    )
+                    batch.set(notifRef, notif.toCreateMap())
+                }
             }
             batch.commit().await()
             Result.success(Unit)
@@ -476,6 +578,21 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             )
+
+            // Notify post author if not self
+            if (post.authorUid != uid) {
+                val notifRef = db.collection("users").document(post.authorUid).collection("notifications").document("cmt_${commentId.take(12)}")
+                val notif = UserNotification(
+                    userId = post.authorUid,
+                    type = "comment",
+                    title = "New Anonymous Reply",
+                    body = "Someone left an anonymous reply on your confession: \"${text.trim().take(60)}\"",
+                    targetId = post.id,
+                    isRead = false
+                )
+                batch.set(notifRef, notif.toCreateMap())
+            }
+
             batch.commit().await()
             Result.success(commentId)
         } catch (e: CancellationException) {
@@ -529,7 +646,264 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
         }
     }
 
-    // --- 4. Safety: Reports, Blocks, and Notifications ---
+    // --- 4. Follow System ---
+
+    fun observeFollowing(userId: String): Flow<List<FollowRef>> {
+        val path = "users/$userId/following"
+        return db.collection("users").document(userId).collection("following")
+            .whereEqualTo("followerUid", userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(FollowRef::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            }
+            .catch { error ->
+                if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                throw error
+            }
+    }
+
+    suspend fun toggleFollow(targetUid: String, targetHandle: String, isCurrentlyFollowing: Boolean): Result<Unit> {
+        val uid = requireUserId()
+        if (targetUid == uid) return Result.failure(IllegalArgumentException("Cannot follow self"))
+
+        val followRef = db.collection("users").document(uid).collection("following").document(targetUid)
+        val myProfileRef = db.collection("publicProfiles").document(uid)
+        val targetProfileRef = db.collection("publicProfiles").document(targetUid)
+
+        return try {
+            val batch = db.batch()
+            if (isCurrentlyFollowing) {
+                batch.delete(followRef)
+                batch.update(myProfileRef, "followingCount", FieldValue.increment(-1))
+                batch.update(targetProfileRef, "followersCount", FieldValue.increment(-1))
+            } else {
+                val follow = FollowRef(
+                    followerUid = uid,
+                    targetUid = targetUid,
+                    targetHandle = targetHandle
+                )
+                batch.set(followRef, follow.toCreateMap())
+                batch.update(myProfileRef, "followingCount", FieldValue.increment(1))
+                batch.update(targetProfileRef, "followersCount", FieldValue.increment(1))
+
+                val notifRef = db.collection("users").document(targetUid).collection("notifications").document("follow_${uid.take(12)}")
+                val notif = UserNotification(
+                    userId = targetUid,
+                    type = "follow",
+                    title = "New Anonymous Follower",
+                    body = "Someone started following your anonymous confessions.",
+                    targetId = uid,
+                    isRead = false
+                )
+                batch.set(notifRef, notif.toCreateMap())
+            }
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, followRef.path)
+            Result.failure(e)
+        }
+    }
+
+    // --- 5. Real-Time Private Messaging ---
+
+    fun observeConversations(userId: String): Flow<List<Conversation>> {
+        val path = "conversations"
+        return db.collection(path)
+            .whereArrayContains("participantUids", userId)
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(Conversation::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedByDescending { it.updatedAt ?: Timestamp(0, 0) }
+            }
+            .catch { error ->
+                if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                throw error
+            }
+    }
+
+    fun observeMessages(conversationId: String): Flow<List<DirectMessage>> {
+        val path = "conversations/$conversationId/messages"
+        return db.collection("conversations").document(conversationId).collection("messages")
+            .snapshots()
+            .map { snapshot ->
+                snapshot.toObjects(DirectMessage::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedBy { it.createdAt ?: Timestamp(0, 0) }
+            }
+            .catch { error ->
+                if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
+                throw error
+            }
+    }
+
+    suspend fun sendDirectMessageRequest(
+        recipientUid: String,
+        recipientHandle: String,
+        initialText: String,
+        mediaUri: String? = null
+    ): Result<String> {
+        val uid = requireUserId()
+        if (recipientUid == uid) return Result.failure(IllegalArgumentException("Cannot message self"))
+
+        val conversationId = if (uid < recipientUid) "conv_${uid.take(8)}_${recipientUid.take(8)}" else "conv_${recipientUid.take(8)}_${uid.take(8)}"
+        val convRef = db.collection("conversations").document(conversationId)
+
+        return try {
+            val myProfile = db.collection("publicProfiles").document(uid).get().await()
+            val senderHandle = myProfile.getString("anonymousHandle") ?: "@anon_user"
+
+            val existing = convRef.get().await()
+            val batch = db.batch()
+
+            val status = if (existing.exists()) {
+                existing.getString("status") ?: "pending"
+            } else {
+                "pending"
+            }
+
+            if (status == "declined" || status == "blocked") {
+                return Result.failure(IllegalStateException("Conversation request is $status."))
+            }
+
+            val conv = Conversation(
+                id = conversationId,
+                participantUids = listOf(uid, recipientUid),
+                initiatorUid = uid,
+                recipientUid = recipientUid,
+                status = status,
+                lastMessageText = initialText.trim().take(1000),
+                lastMessageSenderUid = uid,
+                initiatorHandle = senderHandle,
+                recipientHandle = recipientHandle
+            )
+            batch.set(convRef, conv.toCreateMap())
+
+            val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val msgRef = convRef.collection("messages").document(messageId)
+            val msg = DirectMessage(
+                id = messageId,
+                conversationId = conversationId,
+                senderUid = uid,
+                recipientUid = recipientUid,
+                text = initialText.trim().take(1000),
+                mediaUri = mediaUri
+            )
+            batch.set(msgRef, msg.toCreateMap())
+
+            // Notification to recipient
+            val notifRef = db.collection("users").document(recipientUid).collection("notifications").document("dm_${messageId.take(12)}")
+            val notif = UserNotification(
+                userId = recipientUid,
+                type = if (status == "pending") "dm_request" else "dm_message",
+                title = if (status == "pending") "Private Message Request" else "New Message",
+                body = "New message from $senderHandle: \"${initialText.trim().take(60)}\"",
+                targetId = conversationId,
+                isRead = false
+            )
+            batch.set(notifRef, notif.toCreateMap())
+
+            batch.commit().await()
+            Result.success(conversationId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, convRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun respondToMessageRequest(conversationId: String, accept: Boolean, block: Boolean = false): Result<Unit> {
+        val uid = requireUserId()
+        val convRef = db.collection("conversations").document(conversationId)
+        return try {
+            val nextStatus = when {
+                block -> "blocked"
+                accept -> "accepted"
+                else -> "declined"
+            }
+            convRef.update(
+                mapOf(
+                    "status" to nextStatus,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+
+            if (block) {
+                val conv = convRef.get().await().toObject(Conversation::class.java)
+                val targetUid = conv?.participantUids?.firstOrNull { it != uid }
+                if (targetUid != null) {
+                    blockAuthor(targetUid, "Anonymous User")
+                }
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, convRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendMessageInConversation(
+        conversationId: String,
+        recipientUid: String,
+        text: String,
+        mediaUri: String? = null
+    ): Result<String> {
+        val uid = requireUserId()
+        val convRef = db.collection("conversations").document(conversationId)
+        val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+        val msgRef = convRef.collection("messages").document(messageId)
+
+        return try {
+            val conv = convRef.get().await().toObject(Conversation::class.java)
+            if (conv?.status != "accepted") {
+                return Result.failure(IllegalStateException("Cannot send message until conversation request is accepted."))
+            }
+
+            val batch = db.batch()
+            val msg = DirectMessage(
+                id = messageId,
+                conversationId = conversationId,
+                senderUid = uid,
+                recipientUid = recipientUid,
+                text = text.trim().take(1000),
+                mediaUri = mediaUri
+            )
+            batch.set(msgRef, msg.toCreateMap())
+            batch.update(
+                convRef,
+                mapOf(
+                    "lastMessageText" to text.trim().take(1000),
+                    "lastMessageSenderUid" to uid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+
+            val notifRef = db.collection("users").document(recipientUid).collection("notifications").document("msg_${messageId.take(12)}")
+            val notif = UserNotification(
+                userId = recipientUid,
+                type = "dm_message",
+                title = "New Private Message",
+                body = "New message: \"${text.trim().take(60)}\"",
+                targetId = conversationId,
+                isRead = false
+            )
+            batch.set(notifRef, notif.toCreateMap())
+
+            batch.commit().await()
+            Result.success(messageId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, msgRef.path)
+            Result.failure(e)
+        }
+    }
+
+    // --- 6. Safety: Reports, Blocks, and Notifications ---
 
     suspend fun submitReport(
         targetType: String,
@@ -664,6 +1038,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "Sometimes I just want to run away from everything... 💔",
                     type = "text",
+                    category = "Feelings",
                     topics = "life,feelings,honest",
                     status = "published",
                     likeCount = 842L,
@@ -678,6 +1053,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "Life is better with good coffee and good vibes. ☕✨",
                     type = "text",
+                    category = "Coffee",
                     topics = "coffee,vibes,gratitude",
                     status = "published",
                     likeCount = 627L,
@@ -692,6 +1068,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "Watching the purple sunset sky made me realize it is okay to let go of old chapters and start fresh.",
                     type = "image",
+                    category = "Life",
                     mediaUri = "preset://sunset_sky",
                     mediaCaption = "Just let it go... ❤️",
                     topics = "healing,sunset,peace",
@@ -708,6 +1085,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "Quiet mornings with warm latte art before the world wakes up are my secret therapy.",
                     type = "image",
+                    category = "Coffee",
                     mediaUri = "preset://coffee_cup",
                     mediaCaption = "Coffee heals everything ☕",
                     topics = "coffee,morning,calm",
@@ -724,6 +1102,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "No one in my circle knows I have been secretly building my own studio after work every night. Dream big... ✨",
                     type = "video",
+                    category = "Dreams",
                     mediaUri = "preset://dream_silhouette",
                     mediaCaption = "Dream big... ✨",
                     mediaDurationSec = 42L,
@@ -741,6 +1120,7 @@ class AnonymousnetRepository(private val db: FirebaseFirestore) {
                     isAnonymous = true,
                     text = "Recorded the calm evening breeze by the coast today. Choosing happiness one breath at a time.",
                     type = "audio",
+                    category = "Mindfulness",
                     mediaUri = "preset://birds_sky",
                     mediaCaption = "Be happy ❤️",
                     mediaDurationSec = 28L,

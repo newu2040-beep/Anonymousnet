@@ -6,13 +6,18 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.AnonymousnetRepository
 import com.example.data.BlockedUserRef
 import com.example.data.ConfessionPost
+import com.example.data.Conversation
+import com.example.data.DirectMessage
+import com.example.data.FollowRef
 import com.example.data.PostComment
 import com.example.data.PublicProfile
 import com.example.data.SavedOrLikedPostRef
 import com.example.data.UserAccount
 import com.example.data.UserNotification
+import com.example.data.UsernameAvailability
 import com.google.firebase.Timestamp
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +64,7 @@ enum class ExploreSort(val label: String) {
 
 sealed interface SubScreen {
     data class PostDetail(val postId: String) : SubScreen
+    data class ConversationChat(val conversationId: String, val otherUserUid: String, val otherUserHandle: String) : SubScreen
     data object MyPosts : SubScreen
     data object SavedPosts : SubScreen
     data object LikedPosts : SubScreen
@@ -73,6 +79,7 @@ sealed interface SubScreen {
 data class DraftComposerState(
     val text: String = "",
     val selectedType: String = "image", // image, video, audio, other, text
+    val selectedCategory: String = "General",
     val keepAnonymous: Boolean = true,
     val mediaUri: String? = null,
     val mediaCaption: String = "",
@@ -100,6 +107,9 @@ class AnonymousnetViewModel(
     private val _feedSegment = MutableStateFlow(FeedSegment.FOR_YOU)
     val feedSegment: StateFlow<FeedSegment> = _feedSegment.asStateFlow()
 
+    private val _selectedCategoryFilter = MutableStateFlow<String?>(null)
+    val selectedCategoryFilter: StateFlow<String?> = _selectedCategoryFilter.asStateFlow()
+
     private val _exploreFilter = MutableStateFlow(ExploreFilter.ALL)
     val exploreFilter: StateFlow<ExploreFilter> = _exploreFilter.asStateFlow()
 
@@ -124,6 +134,14 @@ class AnonymousnetViewModel(
     private val _activePostComments = MutableStateFlow<List<PostComment>>(emptyList())
     val activePostComments: StateFlow<List<PostComment>> = _activePostComments.asStateFlow()
     private var commentsJob: Job? = null
+
+    private val _activeChatMessages = MutableStateFlow<List<DirectMessage>>(emptyList())
+    val activeChatMessages: StateFlow<List<DirectMessage>> = _activeChatMessages.asStateFlow()
+    private var chatJob: Job? = null
+
+    private val _usernameAvailability = MutableStateFlow<UsernameAvailability>(UsernameAvailability.Idle)
+    val usernameAvailability: StateFlow<UsernameAvailability> = _usernameAvailability.asStateFlow()
+    private var checkUsernameJob: Job? = null
 
     // Two-tier Flow error handling for all Firestore streams
     val userAccountState: StateFlow<UiState<UserAccount?>> = repository.observeUserAccount(currentUserId)
@@ -172,6 +190,24 @@ class AnonymousnetViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
 
+    val followingListState: StateFlow<List<FollowRef>> = repository.observeFollowing(currentUserId)
+        .catch { e ->
+            Log.w(TAG, "Error observing following", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
+
+    val followedUids: StateFlow<Set<String>> = followingListState
+        .map { list -> list.map { it.targetUid }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptySet())
+
+    val conversationsState: StateFlow<List<Conversation>> = repository.observeConversations(currentUserId)
+        .catch { e ->
+            Log.w(TAG, "Error observing conversations", e)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
+
     val blockedUsersState: StateFlow<List<BlockedUserRef>> = repository.observeBlockedUsers(currentUserId)
         .catch { e ->
             Log.w(TAG, "Error observing blocked users", e)
@@ -198,26 +234,54 @@ class AnonymousnetViewModel(
         .map { list -> list.map { it.blockedUid }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptySet())
 
+    // All available post categories derived from published posts
+    val availableCategories: StateFlow<List<String>> = publishedPostsState.map { state ->
+        val defaults = listOf("General", "Life", "Feelings", "Coffee", "Dreams", "Mindfulness", "Vibes")
+        if (state is UiState.Success) {
+            val fromPosts = state.data.map { it.category.trim() }.filter { it.isNotBlank() }
+            (defaults + fromPosts).distinct()
+        } else defaults
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), listOf("General", "Life", "Feelings", "Coffee", "Dreams", "Mindfulness", "Vibes"))
+
+    private data class FeedFilterParams(
+        val segment: FeedSegment,
+        val category: String?,
+        val followed: Set<String>,
+        val blocked: Set<String>,
+        val hidden: Set<String>
+    )
+
+    private val feedFilterParams = combine(
+        _feedSegment,
+        _selectedCategoryFilter,
+        followedUids,
+        blockedUids,
+        _hiddenPostIds
+    ) { segment, category, followed, blocked, hidden ->
+        FeedFilterParams(segment, category, followed, blocked, hidden)
+    }
+
     val filteredFeedPosts: StateFlow<UiState<List<ConfessionPost>>> = combine(
         publishedPostsState,
-        _feedSegment,
-        blockedUids,
-        _hiddenPostIds,
-        savedPostIds
-    ) { postsState, segment, blocked, hidden, saved ->
+        feedFilterParams
+    ) { postsState, params ->
         when (postsState) {
             is UiState.Loading -> UiState.Loading
             is UiState.Error -> postsState
             is UiState.Success -> {
                 val visible = postsState.data.filter { post ->
-                    post.id !in hidden && post.authorUid !in blocked && post.status == "published"
+                    post.id !in params.hidden && post.authorUid !in params.blocked && post.status == "published" &&
+                        (params.category == null || post.category.equals(params.category, ignoreCase = true))
                 }
-                val sorted = when (segment) {
+                val sorted = when (params.segment) {
                     FeedSegment.FOR_YOU -> visible
                     FeedSegment.POPULAR -> visible.sortedByDescending { it.likeCount + it.commentCount * 2 }
                     FeedSegment.FOLLOWING -> {
-                        val savedMatches = visible.filter { it.id in saved || (it.topics ?: "").contains("vibes") || (it.topics ?: "").contains("coffee") }
-                        savedMatches.ifEmpty { visible }
+                        val followedMatches = visible.filter { it.authorUid in params.followed }
+                        followedMatches.ifEmpty {
+                            // If user is not following anyone yet, show active community creators
+                            visible
+                        }
                     }
                 }
                 UiState.Success(sorted)
@@ -225,28 +289,45 @@ class AnonymousnetViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), UiState.Loading)
 
-    val filteredExplorePosts: StateFlow<UiState<List<ConfessionPost>>> = combine(
-        publishedPostsState,
+    private data class ExploreFilterParams(
+        val filter: ExploreFilter,
+        val sort: ExploreSort,
+        val query: String,
+        val category: String?,
+        val blocked: Set<String>
+    )
+
+    private val exploreFilterParams = combine(
         _exploreFilter,
         _exploreSort,
         _exploreSearchQuery,
+        _selectedCategoryFilter,
         blockedUids
-    ) { postsState, filter, sort, query, blocked ->
+    ) { filter, sort, query, category, blocked ->
+        ExploreFilterParams(filter, sort, query, category, blocked)
+    }
+
+    val filteredExplorePosts: StateFlow<UiState<List<ConfessionPost>>> = combine(
+        publishedPostsState,
+        exploreFilterParams
+    ) { postsState, params ->
         when (postsState) {
             is UiState.Loading -> UiState.Loading
             is UiState.Error -> postsState
             is UiState.Success -> {
-                val q = query.trim().lowercase()
+                val q = params.query.trim().lowercase()
                 val filtered = postsState.data.filter { post ->
-                    post.authorUid !in blocked &&
+                    post.authorUid !in params.blocked &&
                         post.status == "published" &&
-                        (filter.typeKey == null || post.type.equals(filter.typeKey, ignoreCase = true)) &&
+                        (params.filter.typeKey == null || post.type.equals(params.filter.typeKey, ignoreCase = true)) &&
+                        (params.category == null || post.category.equals(params.category, ignoreCase = true)) &&
                         (q.isEmpty() ||
                             post.text.lowercase().contains(q) ||
+                            post.category.lowercase().contains(q) ||
                             (post.mediaCaption?.lowercase()?.contains(q) == true) ||
                             (post.topics?.lowercase()?.contains(q) == true))
                 }
-                val sorted = when (sort) {
+                val sorted = when (params.sort) {
                     ExploreSort.POPULAR -> filtered.sortedByDescending { it.likeCount + it.commentCount }
                     ExploreSort.RECENT -> filtered.sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
                 }
@@ -271,6 +352,8 @@ class AnonymousnetViewModel(
         _subScreenStack.update { it + subScreen }
         if (subScreen is SubScreen.PostDetail) {
             observePostComments(subScreen.postId)
+        } else if (subScreen is SubScreen.ConversationChat) {
+            observeChatMessages(subScreen.conversationId)
         }
     }
 
@@ -298,8 +381,23 @@ class AnonymousnetViewModel(
         }
     }
 
+    private fun observeChatMessages(conversationId: String) {
+        chatJob?.cancel()
+        chatJob = viewModelScope.launch {
+            repository.observeMessages(conversationId)
+                .catch { e -> Log.w(TAG, "Error observing chat messages", e) }
+                .collect { msgs ->
+                    _activeChatMessages.value = msgs
+                }
+        }
+    }
+
     fun setFeedSegment(segment: FeedSegment) {
         _feedSegment.value = segment
+    }
+
+    fun setCategoryFilter(category: String?) {
+        _selectedCategoryFilter.value = if (_selectedCategoryFilter.value == category) null else category
     }
 
     fun setExploreFilter(filter: ExploreFilter) {
@@ -333,6 +431,10 @@ class AnonymousnetViewModel(
         _composerState.update { it.copy(selectedType = type) }
     }
 
+    fun updateComposerCategory(category: String) {
+        _composerState.update { it.copy(selectedCategory = category) }
+    }
+
     fun updateKeepAnonymous(keepAnon: Boolean) {
         _composerState.update { it.copy(keepAnonymous = keepAnon) }
     }
@@ -351,10 +453,6 @@ class AnonymousnetViewModel(
                 mediaMimeType = mimeType
             )
         }
-    }
-
-    fun updateComposerCaption(caption: String) {
-        _composerState.update { it.copy(mediaCaption = caption.take(120)) }
     }
 
     fun updateComposerTopics(topics: String) {
@@ -398,6 +496,7 @@ class AnonymousnetViewModel(
             val result = repository.createPost(
                 text = trimmed,
                 type = finalType,
+                category = state.selectedCategory.ifBlank { "General" },
                 isAnonymous = state.keepAnonymous,
                 anonymousLabel = displayLabel,
                 anonymousHandle = handle,
@@ -428,6 +527,7 @@ class AnonymousnetViewModel(
         _composerState.value = DraftComposerState(
             text = draft.text,
             selectedType = draft.type,
+            selectedCategory = draft.category,
             keepAnonymous = draft.isAnonymous,
             mediaUri = draft.mediaUri,
             mediaCaption = draft.mediaCaption ?: "",
@@ -459,6 +559,56 @@ class AnonymousnetViewModel(
                 showSnackbar(if (isSaved) "Removed from Saved" else "Saved privately to your profile")
             }.onFailure {
                 showSnackbar("Could not update saved state.")
+            }
+        }
+    }
+
+    fun toggleFollowUser(targetUid: String, targetHandle: String) {
+        val isFollowing = targetUid in followedUids.value
+        viewModelScope.launch {
+            repository.toggleFollow(targetUid, targetHandle, isFollowing).onSuccess {
+                showSnackbar(if (isFollowing) "Unfollowed $targetHandle" else "Following $targetHandle")
+            }.onFailure {
+                showSnackbar("Could not update follow state.")
+            }
+        }
+    }
+
+    fun startPrivateMessageRequest(recipientUid: String, recipientHandle: String, messageText: String) {
+        val trimmed = messageText.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            repository.sendDirectMessageRequest(recipientUid, recipientHandle, trimmed).onSuccess { convId ->
+                showSnackbar("Message request sent to $recipientHandle")
+                pushSubScreen(SubScreen.ConversationChat(convId, recipientUid, recipientHandle))
+            }.onFailure { e ->
+                showSnackbar(e.message ?: "Could not send message request.")
+            }
+        }
+    }
+
+    fun respondToDmRequest(conversationId: String, accept: Boolean, block: Boolean = false) {
+        viewModelScope.launch {
+            repository.respondToMessageRequest(conversationId, accept, block).onSuccess {
+                showSnackbar(
+                    when {
+                        block -> "Conversation blocked"
+                        accept -> "Message request accepted"
+                        else -> "Message request declined"
+                    }
+                )
+            }.onFailure {
+                showSnackbar("Failed to update message request.")
+            }
+        }
+    }
+
+    fun sendChatMessage(conversationId: String, recipientUid: String, text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            repository.sendMessageInConversation(conversationId, recipientUid, trimmed).onFailure { e ->
+                showSnackbar(e.message ?: "Could not send message.")
             }
         }
     }
@@ -539,6 +689,18 @@ class AnonymousnetViewModel(
         }
     }
 
+    fun setColorTheme(themeKey: String) {
+        viewModelScope.launch {
+            repository.updateUserPreferences(colorTheme = themeKey)
+        }
+    }
+
+    fun setUseSystemFont(useSys: Boolean) {
+        viewModelScope.launch {
+            repository.updateUserPreferences(useSystemFont = useSys)
+        }
+    }
+
     fun updatePrivacyDefaults(keepAnonymousDefault: Boolean, notificationsEnabled: Boolean) {
         viewModelScope.launch {
             repository.updateUserPreferences(
@@ -554,6 +716,45 @@ class AnonymousnetViewModel(
         viewModelScope.launch {
             repository.updateUserPreferences(guest = false).onSuccess {
                 showSnackbar("Guest session linked to your Google account!")
+            }
+        }
+    }
+
+    fun checkUsername(rawHandle: String) {
+        checkUsernameJob?.cancel()
+        val trimmed = rawHandle.trim()
+        if (trimmed.isEmpty()) {
+            _usernameAvailability.value = UsernameAvailability.Empty
+            return
+        }
+        _usernameAvailability.value = UsernameAvailability.Checking
+        checkUsernameJob = viewModelScope.launch {
+            delay(280L)
+            val result = repository.checkUsernameAvailability(trimmed)
+            _usernameAvailability.value = result.getOrElse {
+                UsernameAvailability.InvalidFormat(it.message ?: "Failed to verify username")
+            }
+        }
+    }
+
+    fun resetUsernameCheck() {
+        checkUsernameJob?.cancel()
+        _usernameAvailability.value = UsernameAvailability.Idle
+    }
+
+    fun updateProfileAndUsername(
+        newHandle: String,
+        newDisplayName: String,
+        onComplete: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            repository.updateUsernameAndDisplayName(newHandle, newDisplayName).onSuccess {
+                val normalized = repository.normalizeHandle(newHandle)
+                showSnackbar("Username successfully updated to @$normalized!")
+                onComplete(true)
+            }.onFailure { err ->
+                showSnackbar(err.message ?: "Could not update username.")
+                onComplete(false)
             }
         }
     }

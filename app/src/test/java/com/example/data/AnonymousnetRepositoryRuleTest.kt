@@ -85,6 +85,10 @@ class AnonymousnetRepositoryRuleTest : FirestoreEmulatorTestBase() {
         val aliceUid = signInTestUser(ALICE_EMAIL)
         val repository = AnonymousnetRepository(firestore)
 
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.ensureUserAndPublicProfile(guestMode = false).getOrThrow()
+        }
+
         val postId = "post_${UUID.randomUUID().toString().replace("-", "").take(12)}"
         withTimeout(DEFAULT_TIMEOUT_MS) {
             repository.createPost(
@@ -118,6 +122,46 @@ class AnonymousnetRepositoryRuleTest : FirestoreEmulatorTestBase() {
             )
         }
         assertTrue(reportResult.isSuccess)
+    }
+
+    @Test
+    fun customizeUsername_realtimeUniqueReservationAndCheck_succeeds() = runBlocking {
+        signInTestUser(ALICE_EMAIL)
+        val aliceRepo = AnonymousnetRepository(firestore)
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.ensureUserAndPublicProfile(guestMode = false).getOrThrow()
+        }
+
+        val testUniqueHandle = "shadow_${UUID.randomUUID().toString().replace("-", "").take(6)}"
+
+        // 1. Initially should be Available
+        val initialCheck = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.checkUsernameAvailability(testUniqueHandle).getOrThrow()
+        }
+        assertTrue(initialCheck is UsernameAvailability.Available)
+
+        // 2. Claim the unique username
+        val updateResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.updateUsernameAndDisplayName(
+                newRawHandle = testUniqueHandle,
+                newDisplayName = "Shadow Phantom"
+            )
+        }
+        assertTrue(updateResult.isSuccess)
+
+        // 3. For Alice, it is now her active handle
+        val aliceCheck = withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.checkUsernameAvailability(testUniqueHandle).getOrThrow()
+        }
+        assertTrue(aliceCheck is UsernameAvailability.IsCurrentUser)
+
+        // 4. Bob signs in and checks the same handle -> it must be Taken!
+        signInTestUser(BOB_EMAIL)
+        val bobRepo = AnonymousnetRepository(firestore)
+        val bobCheck = withTimeout(DEFAULT_TIMEOUT_MS) {
+            bobRepo.checkUsernameAvailability(testUniqueHandle).getOrThrow()
+        }
+        assertTrue(bobCheck is UsernameAvailability.Taken)
     }
 
     private companion object {

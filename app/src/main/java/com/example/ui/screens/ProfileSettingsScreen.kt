@@ -32,8 +32,12 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FontDownload
@@ -41,27 +45,33 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,32 +93,33 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.PublicProfile
 import com.example.data.UserAccount
+import com.example.data.UsernameAvailability
 import com.example.ui.SubScreen
 import com.example.ui.components.AnonymousHatAvatar
 import com.example.ui.components.PushNotificationHelper
 import com.example.ui.theme.AnonHeartRed
-import com.example.ui.theme.AnonPrimaryViolet
 import com.example.ui.theme.AnonStarGold
 import com.example.ui.theme.AppColorTheme
 
 /**
  * Screen 5 — Profile and Settings
- * Matches the fifth reference panel and includes full Settings controls:
- * - Top-right settings gear icon + soft pastel lavender/blue aura in top-left
- * - Centered anonymous hat/glasses avatar with verified checkmark badge
- * - Identity: "Anonymousnet" + "@anon_user" handle (never displays email or legal name)
- * - Three stat cards: 24 Posts | 12.5K Views | 8.7K Likes
- * - Highlighted violet gradient privacy card: Crown icon + "Stay Anonymous Always" + `>`
- * - Quick Appearance & Permissions Studio Card (Dark/Light mode switch, System Font switch, Various Themes, Push Notifications & All Permissions)
- * - Clean rounded white settings list: My Posts, Saved, Liked, Report a Post, Help & Support, About Anonymousnet
+ * Compact, Apple-inspired layout:
+ * - Top-right settings gear icon + soft ambient aura
+ * - Centered anonymous avatar with verified safety badge
+ * - Identity: "Anonymousnet" + "@anon_user"
+ * - Five stat cards: Posts | Views | Likes | Followers | Following
+ * - "Stay Anonymous Always" highlighted privacy card
+ * - Clean rounded settings list: My Posts, Saved, Liked, Report a Post, Help & Support, About Anonymousnet
+ * - Profile Customization Section: Dark/Light Mode, System Font Toggle, and App Color Theme Picker
+ * - Clean Settings Dialog: System Font and Color Theme removed from the modal (since they are in Profile)
  * - Developer Credit: "Made with ❤️ by Rahul Shah"
- * - Centered "Log Out" action at the bottom
  */
 @Composable
 fun ProfileSettingsScreen(
     userAccount: UserAccount?,
     publicProfile: PublicProfile?,
     myPostsCount: Int,
+    followingCount: Int,
     isDarkTheme: Boolean,
     selectedColorTheme: AppColorTheme,
     useSystemFont: Boolean,
@@ -119,10 +130,15 @@ fun ProfileSettingsScreen(
     onLinkGuestAccount: () -> Unit,
     onNavigateSubScreen: (SubScreen) -> Unit,
     onDeleteAccount: () -> Unit,
-    onLogOut: () -> Unit
+    onLogOut: () -> Unit,
+    usernameAvailability: UsernameAvailability = UsernameAvailability.Idle,
+    onCheckUsername: (String) -> Unit = {},
+    onResetUsernameCheck: () -> Unit = {},
+    onSaveUsernameAndDisplayName: (handle: String, displayName: String, onComplete: (Boolean) -> Unit) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     var showSettingsModal by remember { mutableStateOf(false) }
+    var showEditUsernameDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmModal by remember { mutableStateOf(false) }
     var permissionStatusText by remember { mutableStateOf("") }
 
@@ -151,7 +167,7 @@ fun ProfileSettingsScreen(
     ) { results ->
         allPermissionsGranted = checkPermissionsGranted()
         val grantedCount = results.values.count { it }
-        permissionStatusText = "Permissions updated ($grantedCount granted). Push notifications, camera & audio ready!"
+        permissionStatusText = "Permissions updated ($grantedCount granted)."
         PushNotificationHelper.ensureNotificationChannel(context)
     }
 
@@ -199,9 +215,10 @@ fun ProfileSettingsScreen(
     val displayPosts = if (myPostsCount > 0) (24L + myPostsCount - 6L).coerceAtLeast(myPostsCount.toLong()) else (publicProfile?.postCount ?: 24L)
     val displayViews = publicProfile?.viewCount ?: 12500L
     val displayLikes = publicProfile?.likeCount ?: 8700L
+    val displayFollowers = publicProfile?.followersCount ?: 142L
+    val displayFollowing = if (followingCount > 0) followingCount.toLong() else (publicProfile?.followingCount ?: 38L)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Soft pastel lavender/blue aura at top-left matching Screen 5 reference
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -230,7 +247,7 @@ fun ProfileSettingsScreen(
                 .padding(top = 12.dp, bottom = 114.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. Top Row: Gear Icon at top-right
+            // 1. Top Row: Settings gear icon on top-right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
@@ -250,7 +267,7 @@ fun ProfileSettingsScreen(
                 }
             }
 
-            // 2. Centered Anonymous Avatar with Verified Safety Badge
+            // 2. Centered Anonymous Avatar
             AnonymousHatAvatar(
                 size = 94.dp,
                 backgroundColor = selectedColorTheme.primary.copy(alpha = 0.16f),
@@ -278,12 +295,48 @@ fun ProfileSettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Surface(
+                onClick = { showEditUsernameDialog = true },
+                shape = RoundedCornerShape(20.dp),
+                color = selectedColorTheme.primary.copy(alpha = 0.12f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    selectedColorTheme.primary.copy(alpha = 0.35f)
+                ),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .testTag("customize_username_button")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = "Customize Username",
+                        tint = selectedColorTheme.primaryDark,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "Customize Username",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        ),
+                        color = selectedColorTheme.primaryDark
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 4. Three Rounded Stat Cards: 24 Posts | 12.5K Views | 8.7K Likes
+            // 4. Compact Stats: Posts, Views, Likes, Followers, Following
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ProfileStatCard(
                     value = formatCompactCount(displayPosts),
@@ -300,11 +353,21 @@ fun ProfileSettingsScreen(
                     label = "Likes",
                     modifier = Modifier.weight(1f)
                 )
+                ProfileStatCard(
+                    value = formatCompactCount(displayFollowers),
+                    label = "Followers",
+                    modifier = Modifier.weight(1f)
+                )
+                ProfileStatCard(
+                    value = formatCompactCount(displayFollowing),
+                    label = "Following",
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 5. Highlighted Violet Privacy Card: "Stay Anonymous Always"
+            // 5. Highlighted Gradient Privacy Card: "Stay Anonymous Always"
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -368,81 +431,7 @@ fun ProfileSettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 6. Clean Rounded Settings List Card (matches Screen 5 mockup)
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = RoundedCornerShape(24.dp),
-                        spotColor = Color.Black.copy(alpha = 0.05f)
-                    ),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    ProfileMenuRow(
-                        icon = Icons.AutoMirrored.Outlined.Article,
-                        title = "My Posts",
-                        testTag = "profile_row_my_posts",
-                        onClick = { onNavigateSubScreen(SubScreen.MyPosts) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.Outlined.BookmarkBorder,
-                        title = "Saved",
-                        testTag = "profile_row_saved",
-                        onClick = { onNavigateSubScreen(SubScreen.SavedPosts) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.Outlined.FavoriteBorder,
-                        title = "Liked",
-                        testTag = "profile_row_liked",
-                        onClick = { onNavigateSubScreen(SubScreen.LikedPosts) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.Outlined.Palette,
-                        title = "Themes, Fonts & Permissions",
-                        testTag = "profile_row_themes_settings",
-                        onClick = { showSettingsModal = true }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.Outlined.ErrorOutline,
-                        title = "Report a Post",
-                        testTag = "profile_row_report",
-                        onClick = {
-                            onNavigateSubScreen(
-                                SubScreen.ReportDialog(
-                                    targetType = "post",
-                                    targetId = "general_feed",
-                                    targetLabel = "Community Confession"
-                                )
-                            )
-                        }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.AutoMirrored.Outlined.HelpOutline,
-                        title = "Help & Support",
-                        testTag = "profile_row_help",
-                        onClick = { onNavigateSubScreen(SubScreen.HelpAndSupport) }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ProfileMenuRow(
-                        icon = Icons.Outlined.Info,
-                        title = "About Anonymousnet",
-                        testTag = "profile_row_about",
-                        onClick = { onNavigateSubScreen(SubScreen.AboutAnonymousnet) }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 7. Inline Settings Card: Dark/Light Switch, System Font Switch, Theme Swatches & Permissions
+            // 6. Profile Customization Section: Dark Mode, System Font, App Color Themes
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -458,10 +447,10 @@ fun ProfileSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "Appearance, Fonts & Permissions",
+                        text = "App Theme & Appearance",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -482,12 +471,12 @@ fun ProfileSettingsScreen(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = if (isDarkTheme) "Dark Mode Active" else "Light Mode Active",
+                                    text = if (isDarkTheme) "Dark Mode" else "Light Mode",
                                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Toggle between dark and light mode",
+                                    text = "Consistent theme across entire application",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -527,7 +516,7 @@ fun ProfileSettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = if (useSystemFont) "Android System Default Font" else "Plus Jakarta Sans (Custom)",
+                                    text = if (useSystemFont) "Device System Default Font" else "Plus Jakarta Sans",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -546,7 +535,7 @@ fun ProfileSettingsScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 
-                    // Various Themes Picker
+                    // App Color Theme Swatches
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -557,7 +546,7 @@ fun ProfileSettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "App Color Theme (${selectedColorTheme.displayName})",
+                                text = "Color Palette (${selectedColorTheme.displayName})",
                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -626,135 +615,190 @@ fun ProfileSettingsScreen(
                             }
                         }
                     }
+                }
+            }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+            Spacer(modifier = Modifier.height(16.dp))
 
-                    // Permissions & Push Notifications Quick Controls
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.Security,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
+            // 7. Clean Rounded Navigation Menu
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(24.dp),
+                        spotColor = Color.Black.copy(alpha = 0.05f)
+                    ),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ProfileMenuRow(
+                        icon = Icons.AutoMirrored.Outlined.Article,
+                        title = "My Posts",
+                        testTag = "profile_row_my_posts",
+                        onClick = { onNavigateSubScreen(SubScreen.MyPosts) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    ProfileMenuRow(
+                        icon = Icons.Outlined.BookmarkBorder,
+                        title = "Saved",
+                        testTag = "profile_row_saved",
+                        onClick = { onNavigateSubScreen(SubScreen.SavedPosts) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    ProfileMenuRow(
+                        icon = Icons.Outlined.FavoriteBorder,
+                        title = "Liked",
+                        testTag = "profile_row_liked",
+                        onClick = { onNavigateSubScreen(SubScreen.LikedPosts) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    ProfileMenuRow(
+                        icon = Icons.Outlined.ErrorOutline,
+                        title = "Report a Post",
+                        testTag = "profile_row_report",
+                        onClick = {
+                            onNavigateSubScreen(
+                                SubScreen.ReportDialog(
+                                    targetType = "post",
+                                    targetId = "general_feed",
+                                    targetLabel = "Community Confession"
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Permissions & Full Media Access",
-                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = if (allPermissionsGranted) {
-                                            "Notifications, Camera, Mic & Files granted"
-                                        } else {
-                                            "Grant Notification, Gallery, Files, Mic & Camera"
-                                        },
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { requestAllAppPermissions() },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("grant_all_permissions_button"),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text("Allow All Permissions", fontSize = 12.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    PushNotificationHelper.sendPushNotification(
-                                        context = context,
-                                        title = "Anonymousnet Push Notification",
-                                        body = "Push notifications are active! You'll never miss anonymous replies."
-                                    )
-                                    permissionStatusText = "Sent a live push notification to your device status bar!"
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("test_push_notification_button"),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.NotificationsActive,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Test Push", fontSize = 12.sp)
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    galleryVerifyLauncher.launch(
-                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                    )
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("open_gallery_access_button"),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Text("Gallery Access", fontSize = 12.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    filesVerifyLauncher.launch(arrayOf("*/*"))
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("open_files_access_button"),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.FolderOpen,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Files Access", fontSize = 12.sp)
-                            }
-                        }
-
-                        if (permissionStatusText.isNotBlank()) {
-                            Text(
-                                text = permissionStatusText,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
                             )
                         }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    ProfileMenuRow(
+                        icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                        title = "Help & Support",
+                        testTag = "profile_row_help",
+                        onClick = { onNavigateSubScreen(SubScreen.HelpAndSupport) }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                    ProfileMenuRow(
+                        icon = Icons.Outlined.Info,
+                        title = "About Anonymousnet",
+                        testTag = "profile_row_about",
+                        onClick = { onNavigateSubScreen(SubScreen.AboutAnonymousnet) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 8. Permissions & Hardware Card
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(
+                        elevation = 6.dp,
+                        shape = RoundedCornerShape(22.dp),
+                        spotColor = Color.Black.copy(alpha = 0.05f)
+                    ),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Permissions & Device Access",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { requestAllAppPermissions() },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Allow All Permissions", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                PushNotificationHelper.sendPushNotification(
+                                    context = context,
+                                    title = "Anonymousnet Push Active",
+                                    body = "Real-time push notifications are verified and active!"
+                                )
+                                permissionStatusText = "Push notification triggered on your status bar!"
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.NotificationsActive,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Test Push", fontSize = 12.sp)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                galleryVerifyLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Text("Gallery Access", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { filesVerifyLauncher.launch(arrayOf("*/*")) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Files Access", fontSize = 12.sp)
+                        }
+                    }
+
+                    if (permissionStatusText.isNotBlank()) {
+                        Text(
+                            text = permissionStatusText,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 8. Developer Credit Card ("Made with ❤️ by Rahul Shah")
+            // 9. Developer Credit Card ("Made with ❤️ by Rahul Shah")
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -779,9 +823,7 @@ fun ProfileSettingsScreen(
                     ) {
                         Text(
                             text = "Made with ",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Icon(
@@ -792,9 +834,7 @@ fun ProfileSettingsScreen(
                         )
                         Text(
                             text = " by Rahul Shah",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -810,7 +850,7 @@ fun ProfileSettingsScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 9. Centered Log Out Button
+            // 10. Centered Log Out Button
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
@@ -839,18 +879,18 @@ fun ProfileSettingsScreen(
         }
     }
 
-    // Settings & Account Management Modal (triggered by top-right gear icon or Themes row)
+    // Clean Settings Dialog (System Font and Color Theme removed from here as they are already on the Profile screen)
     if (showSettingsModal) {
         var keepAnon by remember { mutableStateOf(userAccount?.keepAnonymousDefault ?: true) }
         var notifsEnabled by remember { mutableStateOf(userAccount?.notificationsEnabled ?: true) }
 
         AlertDialog(
             onDismissRequest = { showSettingsModal = false },
-            title = { Text("Settings, Themes & Permissions", style = MaterialTheme.typography.titleLarge) },
+            title = { Text("Account & Privacy Settings", style = MaterialTheme.typography.titleLarge) },
             text = {
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -858,64 +898,13 @@ fun ProfileSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Dark / Light Mode", style = MaterialTheme.typography.bodyLarge)
+                            Text("Anonymous by Default", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                if (isDarkTheme) "Dark Mode Enabled" else "Light Mode Enabled",
+                                "Keep your handle hidden when composing confessions",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = isDarkTheme, onCheckedChange = { onToggleDarkTheme() })
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("System Font", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                if (useSystemFont) "Using Android System Font" else "Using Plus Jakarta Sans",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(checked = useSystemFont, onCheckedChange = { onToggleSystemFont(it) })
-                    }
-
-                    Text("Select Color Theme", style = MaterialTheme.typography.labelLarge)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AppColorTheme.entries.forEach { themeOption ->
-                            val selected = themeOption == selectedColorTheme
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable { onSelectColorTheme(themeOption) },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (selected) themeOption.primary else MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = themeOption.displayName,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Anonymous by Default", style = MaterialTheme.typography.bodyLarge)
                         Switch(
                             checked = keepAnon,
                             onCheckedChange = {
@@ -924,46 +913,39 @@ fun ProfileSettingsScreen(
                             }
                         )
                     }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Push Notifications", style = MaterialTheme.typography.bodyLarge)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Push Notifications", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "Receive status bar alerts for comments and likes",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Switch(
                             checked = notifsEnabled,
                             onCheckedChange = {
                                 notifsEnabled = it
                                 onUpdatePrivacyDefaults(keepAnon, notifsEnabled)
-                                if (it) {
-                                    PushNotificationHelper.sendPushNotification(
-                                        context = context,
-                                        title = "Push Notifications Enabled",
-                                        body = "You will now receive instant anonymous confession alerts."
-                                    )
-                                }
                             }
                         )
-                    }
-
-                    Button(
-                        onClick = { requestAllAppPermissions() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("Grant All Permissions (Notifs, Gallery, Files, Mic)")
                     }
 
                     if (userAccount?.guest == true) {
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = AnonPrimaryViolet.copy(alpha = 0.1f)
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
                                     text = "Guest Mode Active",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = AnonPrimaryViolet
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
                                     text = "Uninstalling or clearing app data may lose access unless linked.",
@@ -975,12 +957,32 @@ fun ProfileSettingsScreen(
                                         onLinkGuestAccount()
                                         showSettingsModal = false
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = AnonPrimaryViolet)
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                 ) {
                                     Text("Link Guest Session to Google")
                                 }
                             }
                         }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showSettingsModal = false
+                            showEditUsernameDialog = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("settings_customize_username_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.AlternateEmail,
+                            contentDescription = null,
+                            tint = selectedColorTheme.primaryDark,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Customize Username & Name")
                     }
 
                     OutlinedButton(
@@ -1005,7 +1007,6 @@ fun ProfileSettingsScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 
-                    // Developer credit in Settings modal
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -1060,6 +1061,334 @@ fun ProfileSettingsScreen(
             }
         )
     }
+
+    if (showEditUsernameDialog) {
+        var inputDisplayName by remember {
+            mutableStateOf(publicProfile?.displayName ?: "Anonymousnet")
+        }
+        var inputHandle by remember {
+            mutableStateOf(publicProfile?.anonymousHandle?.removePrefix("@") ?: "anon_user")
+        }
+        var isSaving by remember { mutableStateOf(false) }
+
+        LaunchedEffect(inputHandle) {
+            onCheckUsername(inputHandle)
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (!isSaving) {
+                    onResetUsernameCheck()
+                    showEditUsernameDialog = false
+                }
+            },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(selectedColorTheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.AlternateEmail,
+                            contentDescription = null,
+                            tint = selectedColorTheme.primaryDark,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Customize Username",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 19.sp
+                            )
+                        )
+                        Text(
+                            text = "Real-time unique handle on Anonymousnet",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    OutlinedTextField(
+                        value = inputDisplayName,
+                        onValueChange = {
+                            if (it.length <= 60) inputDisplayName = it
+                        },
+                        label = { Text("Display Name") },
+                        placeholder = { Text("e.g. Midnight Phantom") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_display_name_input"),
+                        shape = RoundedCornerShape(14.dp),
+                        supportingText = {
+                            Text(
+                                text = "${inputDisplayName.length}/60",
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.End,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    )
+
+                    OutlinedTextField(
+                        value = inputHandle,
+                        onValueChange = { raw ->
+                            val filtered = raw.trim()
+                                .removePrefix("@")
+                                .lowercase()
+                                .filter { it.isLetterOrDigit() || it == '_' }
+                                .take(30)
+                            inputHandle = filtered
+                        },
+                        label = { Text("Unique Handle") },
+                        prefix = {
+                            Text(
+                                text = "@",
+                                fontWeight = FontWeight.Bold,
+                                color = selectedColorTheme.primaryDark
+                            )
+                        },
+                        placeholder = { Text("username") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.AlternateEmail,
+                                contentDescription = null,
+                                tint = selectedColorTheme.primaryDark
+                            )
+                        },
+                        singleLine = true,
+                        isError = usernameAvailability is UsernameAvailability.Taken || usernameAvailability is UsernameAvailability.InvalidFormat,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_handle_input"),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = when (usernameAvailability) {
+                            is UsernameAvailability.Available -> Color(0xFFE8F5E9)
+                            is UsernameAvailability.IsCurrentUser -> selectedColorTheme.primary.copy(alpha = 0.12f)
+                            is UsernameAvailability.Taken -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                            is UsernameAvailability.InvalidFormat -> Color(0xFFFFF3E0)
+                            is UsernameAvailability.Checking -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            UsernameAvailability.Empty, UsernameAvailability.Idle -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            when (usernameAvailability) {
+                                is UsernameAvailability.Checking -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = selectedColorTheme.primary
+                                    )
+                                    Text(
+                                        text = "Checking real-time availability...",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                is UsernameAvailability.Available -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2E7D32),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "@${(usernameAvailability as UsernameAvailability.Available).handle} is available!",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = Color(0xFF1B5E20)
+                                    )
+                                }
+                                is UsernameAvailability.IsCurrentUser -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.Verified,
+                                        contentDescription = null,
+                                        tint = selectedColorTheme.primaryDark,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "This is your current active handle",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                                        color = selectedColorTheme.primaryDark
+                                    )
+                                }
+                                is UsernameAvailability.Taken -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.Cancel,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "@${(usernameAvailability as UsernameAvailability.Taken).handle} is already taken by another user",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                is UsernameAvailability.InvalidFormat -> {
+                                    Icon(
+                                        imageVector = Icons.Filled.Warning,
+                                        contentDescription = null,
+                                        tint = Color(0xFFE65100),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = (usernameAvailability as UsernameAvailability.InvalidFormat).reason,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = Color(0xFFBF360C)
+                                    )
+                                }
+                                UsernameAvailability.Empty -> {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Handles must be 3-30 letters, numbers, or underscores.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                UsernameAvailability.Idle -> {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Choose any real-time unique handle across the network.",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Preview across Confessions & Profile",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AnonymousHatAvatar(
+                                    size = 38.dp,
+                                    backgroundColor = selectedColorTheme.primary.copy(alpha = 0.16f),
+                                    iconTint = selectedColorTheme.primaryDark,
+                                    showVerifiedBadge = true
+                                )
+                                Column {
+                                    Text(
+                                        text = inputDisplayName.ifBlank { "Anonymousnet" },
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "@${inputHandle.ifBlank { "handle" }}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                val canSave = !isSaving &&
+                    inputDisplayName.isNotBlank() &&
+                    inputHandle.length in 3..30 &&
+                    (usernameAvailability is UsernameAvailability.Available || usernameAvailability is UsernameAvailability.IsCurrentUser)
+
+                Button(
+                    onClick = {
+                        isSaving = true
+                        onSaveUsernameAndDisplayName(inputHandle, inputDisplayName) { success ->
+                            isSaving = false
+                            if (success) {
+                                onResetUsernameCheck()
+                                showEditUsernameDialog = false
+                            }
+                        }
+                    },
+                    enabled = canSave,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = selectedColorTheme.primary
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("save_username_confirm_button")
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Save Changes")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        onResetUsernameCheck()
+                        showEditUsernameDialog = false
+                    },
+                    enabled = !isSaving
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1087,7 +1416,7 @@ private fun ProfileStatCard(
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 ),
                 color = MaterialTheme.colorScheme.onSurface
@@ -1095,7 +1424,7 @@ private fun ProfileStatCard(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -1143,5 +1472,13 @@ private fun ProfileMenuRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
         )
+    }
+}
+
+private fun formatCompactCount(count: Long): String {
+    return when {
+        count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+        count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+        else -> count.toString()
     }
 }

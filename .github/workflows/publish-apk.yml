@@ -1,0 +1,118 @@
+name: Publish Prebuilt Debug APK Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'apk-distribution/app-debug.apk'
+      - 'apk-distribution/app-debug.apk.sha256'
+      - '.github/workflows/publish-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate precompiled APK and SHA-256 checksum
+        id: validate_apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_FILE="apk-distribution/app-debug.apk"
+          SHA_FILE="apk-distribution/app-debug.apk.sha256"
+
+          if [ ! -f "$APK_FILE" ]; then
+            echo "::error::Missing precompiled APK at $APK_FILE"
+            exit 1
+          fi
+
+          if [ ! -s "$APK_FILE" ]; then
+            echo "::error::APK file at $APK_FILE is empty"
+            exit 1
+          fi
+
+          if [ ! -f "$SHA_FILE" ] || [ ! -s "$SHA_FILE" ]; then
+            echo "::error::Missing or empty checksum file at $SHA_FILE"
+            exit 1
+          fi
+
+          EXPECTED_SHA="$(awk '{print $1}' "$SHA_FILE")"
+          ACTUAL_SHA="$(sha256sum "$APK_FILE" | awk '{print $1}')"
+
+          if [ -z "$EXPECTED_SHA" ] || [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+            echo "::error::SHA-256 checksum mismatch! Expected $EXPECTED_SHA but calculated $ACTUAL_SHA"
+            exit 1
+          fi
+
+          if ! unzip -tq "$APK_FILE"; then
+            echo "::error::Archive validation (unzip -tq) failed for $APK_FILE"
+            exit 1
+          fi
+
+          APK_BYTES="$(stat -c '%s' "$APK_FILE")"
+          APK_HUMAN_SIZE="$(ls -lh "$APK_FILE" | awk '{print $5}')"
+
+          echo "apk_sha256=${ACTUAL_SHA}" >> "$GITHUB_OUTPUT"
+          echo "apk_bytes=${APK_BYTES}" >> "$GITHUB_OUTPUT"
+          echo "apk_human_size=${APK_HUMAN_SIZE}" >> "$GITHUB_OUTPUT"
+          echo "Verified $APK_FILE (${APK_HUMAN_SIZE}, ${APK_BYTES} bytes, SHA-256: ${ACTUAL_SHA})"
+
+      - name: Publish APK to GitHub Releases
+        id: publish_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_SHA256: ${{ steps.validate_apk.outputs.apk_sha256 }}
+          APK_BYTES: ${{ steps.validate_apk.outputs.apk_bytes }}
+          APK_HUMAN_SIZE: ${{ steps.validate_apk.outputs.apk_human_size }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_FILE="apk-distribution/app-debug.apk"
+          RELEASE_TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          RELEASE_TITLE="Debug APK Build #${GITHUB_RUN_NUMBER}"
+
+          NOTES_FILE="${RUNNER_TEMP}/release-notes-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}.md"
+          cat <<EOF > "$NOTES_FILE"
+          ### Precompiled Android Debug APK Release
+
+          - **Asset Filename:** \`app-debug.apk\`
+          - **APK Size:** ${APK_HUMAN_SIZE} (${APK_BYTES} bytes)
+          - **SHA-256 Checksum:** \`${APK_SHA256}\`
+          - **Workflow Run Number:** ${GITHUB_RUN_NUMBER}
+          - **Workflow Run Attempt:** ${GITHUB_RUN_ATTEMPT}
+          - **Source Commit SHA:** ${GITHUB_SHA}
+          - **Direct Latest Download URL:** \`https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/app-debug.apk\`
+          EOF
+
+          gh release create "$RELEASE_TAG" "${APK_FILE}#app-debug.apk" \
+            --title "$RELEASE_TITLE" \
+            --notes-file "$NOTES_FILE" \
+            --target "$GITHUB_SHA" \
+            --latest
+
+          RELEASE_URL="$(gh release view "$RELEASE_TAG" --json url --jq '.url')"
+          DIRECT_DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/app-debug.apk"
+
+          echo "Release Tag: ${RELEASE_TAG}"
+          echo "APK Size: ${APK_HUMAN_SIZE} (${APK_BYTES} bytes)"
+          echo "SHA-256 Checksum: ${APK_SHA256}"
+          echo "GitHub Release Page: ${RELEASE_URL}"
+          echo "Direct Latest-Release APK Download URL: ${DIRECT_DOWNLOAD_URL}"
+
+          {
+            echo "## Precompiled Debug APK Release Summary"
+            echo "- **Release Tag:** \`${RELEASE_TAG}\`"
+            echo "- **APK Size:** ${APK_HUMAN_SIZE} (${APK_BYTES} bytes)"
+            echo "- **SHA-256 Checksum:** \`${APK_SHA256}\`"
+            echo "- **GitHub Release Page:** ${RELEASE_URL}"
+            echo "- **Direct Latest-Release APK Download URL:** ${DIRECT_DOWNLOAD_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"

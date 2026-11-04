@@ -14,6 +14,8 @@ data class UserAccount(
     val accountState: String = "active",
     val guest: Boolean = false,
     val themeMode: String = "light",
+    val colorTheme: String = "violet",
+    val useSystemFont: Boolean = false,
     val keepAnonymousDefault: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val mutedTopics: String = "",
@@ -26,6 +28,8 @@ data class UserAccount(
         "accountState" to accountState,
         "guest" to guest,
         "themeMode" to themeMode,
+        "colorTheme" to colorTheme,
+        "useSystemFont" to useSystemFont,
         "keepAnonymousDefault" to keepAnonymousDefault,
         "notificationsEnabled" to notificationsEnabled,
         "mutedTopics" to mutedTopics,
@@ -45,6 +49,8 @@ data class PublicProfile(
     val postCount: Long = 0L,
     val viewCount: Long = 0L,
     val likeCount: Long = 0L,
+    val followersCount: Long = 0L,
+    val followingCount: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
@@ -57,6 +63,8 @@ data class PublicProfile(
         "postCount" to postCount,
         "viewCount" to viewCount,
         "likeCount" to likeCount,
+        "followersCount" to followersCount,
+        "followingCount" to followingCount,
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp()
     )
@@ -71,6 +79,7 @@ data class ConfessionPost(
     val isAnonymous: Boolean = true,
     val text: String = "",
     val type: String = "text", // text, image, video, audio, other
+    val category: String = "General", // Customizable Category (e.g. Life, Confession, Dreams, Coffee, Love, Thoughts)
     val mediaUri: String? = null,
     val mediaCaption: String? = null,
     val mediaDurationSec: Long? = null,
@@ -92,6 +101,7 @@ data class ConfessionPost(
         "isAnonymous" to isAnonymous,
         "text" to text,
         "type" to type,
+        "category" to category,
         "mediaUri" to mediaUri,
         "mediaCaption" to mediaCaption,
         "mediaDurationSec" to mediaDurationSec,
@@ -161,6 +171,71 @@ data class SavedOrLikedPostRef(
 }
 
 @IgnoreExtraProperties
+data class FollowRef(
+    @DocumentId val id: String = "",
+    val followerUid: String = "",
+    val targetUid: String = "",
+    val targetHandle: String = "@anon_user",
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "followerUid" to followerUid,
+        "targetUid" to targetUid,
+        "targetHandle" to targetHandle,
+        "createdAt" to FieldValue.serverTimestamp()
+    )
+}
+
+@IgnoreExtraProperties
+data class DirectMessage(
+    @DocumentId val id: String = "",
+    val conversationId: String = "",
+    val senderUid: String = "",
+    val recipientUid: String = "",
+    val text: String = "",
+    val mediaUri: String? = null,
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    @Suppress("UNCHECKED_CAST")
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "conversationId" to conversationId,
+        "senderUid" to senderUid,
+        "recipientUid" to recipientUid,
+        "text" to text,
+        "mediaUri" to mediaUri,
+        "createdAt" to FieldValue.serverTimestamp()
+    ).filterValues { it != null } as Map<String, Any>
+}
+
+@IgnoreExtraProperties
+data class Conversation(
+    @DocumentId val id: String = "",
+    val participantUids: List<String> = emptyList(),
+    val initiatorUid: String = "",
+    val recipientUid: String = "",
+    val status: String = "pending", // pending, accepted, declined, blocked
+    val lastMessageText: String = "",
+    val lastMessageSenderUid: String = "",
+    val initiatorHandle: String = "@anon_sender",
+    val recipientHandle: String = "@anon_recipient",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "participantUids" to participantUids,
+        "initiatorUid" to initiatorUid,
+        "recipientUid" to recipientUid,
+        "status" to status,
+        "lastMessageText" to lastMessageText,
+        "lastMessageSenderUid" to lastMessageSenderUid,
+        "initiatorHandle" to initiatorHandle,
+        "recipientHandle" to recipientHandle,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
+    )
+}
+
+@IgnoreExtraProperties
 data class BlockedUserRef(
     @DocumentId val id: String = "",
     val userId: String = "",
@@ -180,7 +255,7 @@ data class BlockedUserRef(
 data class UserNotification(
     @DocumentId val id: String = "",
     val userId: String = "",
-    val type: String = "system", // comment, like, moderation, security, system
+    val type: String = "system", // comment, like, follow, dm_request, dm_message, moderation, security, system
     val title: String = "",
     val body: String = "",
     val targetId: String = "",
@@ -220,4 +295,28 @@ data class ContentReport(
         "status" to status,
         "createdAt" to FieldValue.serverTimestamp()
     )
+}
+
+@IgnoreExtraProperties
+data class UsernameRecord(
+    @DocumentId val id: String = "",
+    val uid: String = "",
+    val handle: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any> = mapOf(
+        "uid" to uid,
+        "handle" to handle,
+        "createdAt" to FieldValue.serverTimestamp()
+    )
+}
+
+sealed interface UsernameAvailability {
+    data object Idle : UsernameAvailability
+    data object Checking : UsernameAvailability
+    data object Empty : UsernameAvailability
+    data class InvalidFormat(val reason: String) : UsernameAvailability
+    data class IsCurrentUser(val handle: String) : UsernameAvailability
+    data class Available(val handle: String) : UsernameAvailability
+    data class Taken(val handle: String) : UsernameAvailability
 }

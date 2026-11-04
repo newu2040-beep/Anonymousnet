@@ -9,6 +9,8 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.VideoView
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -21,12 +23,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,8 +91,7 @@ import java.io.File
 import kotlin.math.sin
 
 /**
- * Helper for recording real voice confessions to an .m4a file in cacheDir,
- * with safe fallback if microphone hardware is unavailable on an emulator.
+ * Helper for recording voice confessions with maximum original quality (.m4a AAC 256kbps 48kHz).
  */
 class VoiceConfessionRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
@@ -107,8 +111,9 @@ class VoiceConfessionRecorder(private val context: Context) {
             mr.setAudioSource(MediaRecorder.AudioSource.MIC)
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            mr.setAudioEncodingBitRate(128000)
-            mr.setAudioSamplingRate(44100)
+            // Preserving high quality audio: 256kbps, 48kHz sampling rate
+            mr.setAudioEncodingBitRate(256000)
+            mr.setAudioSamplingRate(48000)
             mr.setOutputFile(file.absolutePath)
             mr.prepare()
             mr.start()
@@ -146,14 +151,7 @@ class VoiceConfessionRecorder(private val context: Context) {
 
 /**
  * Smooth In-Built Video Player Component
- * Supports any real video URI (content://, file://, https://) via native Android VideoView + MediaPlayer,
- * plus animated 60fps canvas cinema playback for preset:// community videos with:
- * - Play / Pause
- * - -10s / +10s Skip
- * - Interactive Seekbar Scrubber
- * - Mute / Unmute Audio (with ambient audio synthesis for preset videos)
- * - Playback Speed (1.0x, 1.25x, 1.5x, 2.0x)
- * - Fullscreen Mode Dialog
+ * Strictly preserves the video's original aspect ratio without stretching, cropping, or distortion.
  */
 @Composable
 fun InbuiltVideoPlayer(
@@ -172,7 +170,6 @@ fun InbuiltVideoPlayer(
         onToggleFullscreen = { isFullscreen = true },
         modifier = modifier
             .fillMaxWidth()
-            .height(225.dp)
             .clip(RoundedCornerShape(20.dp))
     )
 
@@ -210,12 +207,13 @@ private fun VideoPlayerSurface(
 ) {
     val isPreset = videoUri.startsWith("preset://") || videoUri.isBlank()
     var isPlaying by remember { mutableStateOf(false) }
-    var isMuted by remember { mutableStateOf(true) } // Muted by default per Section 4 & 8 spec
+    var isMuted by remember { mutableStateOf(true) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var currentPositionMs by remember { mutableIntStateOf(0) }
     var totalDurationMs by remember { mutableIntStateOf((durationSecHint.coerceAtLeast(15L) * 1000L).toInt()) }
     var isBuffering by remember { mutableStateOf(false) }
     var fallbackToCanvas by remember { mutableStateOf(isPreset) }
+    var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
 
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -246,7 +244,6 @@ private fun VideoPlayerSurface(
         }
     }
 
-    // Optional ambient harmonic audio when playing preset video unmuted
     LaunchedEffect(isPlaying, isMuted, fallbackToCanvas) {
         if (isPlaying && !isMuted && fallbackToCanvas) {
             withContext(Dispatchers.Default) {
@@ -275,15 +272,28 @@ private fun VideoPlayerSurface(
         label = "wave_phase"
     )
 
-    Box(
-        modifier = modifier
-            .background(Color(0xFF0E0D18))
-            .testTag("inbuilt_video_player")
+    BoxWithConstraints(
+        modifier = if (isFullscreen) {
+            modifier.fillMaxSize().background(Color.Black)
+        } else {
+            modifier
+                .fillMaxWidth()
+                .heightIn(min = 200.dp, max = 340.dp)
+                .aspectRatio(videoAspectRatio.coerceIn(0.65f, 1.95f), matchHeightConstraintsFirst = false)
+                .background(Color(0xFF0E0D18))
+        }.testTag("inbuilt_video_player"),
+        contentAlignment = Alignment.Center
     ) {
         if (!fallbackToCanvas) {
             AndroidView(
                 factory = { ctx ->
-                    VideoView(ctx).apply {
+                    val frameLayout = FrameLayout(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                    val videoView = VideoView(ctx).apply {
                         videoViewRef = this
                         isBuffering = true
                         setVideoURI(Uri.parse(videoUri))
@@ -292,6 +302,11 @@ private fun VideoPlayerSurface(
                             isBuffering = false
                             if (mp.duration > 0) {
                                 totalDurationMs = mp.duration
+                            }
+                            val vw = mp.videoWidth
+                            val vh = mp.videoHeight
+                            if (vw > 0 && vh > 0) {
+                                videoAspectRatio = vw.toFloat() / vh.toFloat()
                             }
                             val vol = if (isMuted) 0f else 1f
                             mp.setVolume(vol, vol)
@@ -309,11 +324,17 @@ private fun VideoPlayerSurface(
                             true
                         }
                     }
+                    val lp = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.view.Gravity.CENTER
+                    )
+                    frameLayout.addView(videoView, lp)
+                    frameLayout
                 },
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // Smooth 60fps Atmospheric Cinema Canvas for preset:// or unsupported codecs
             ExplorePresetArtwork(
                 presetUri = videoUri,
                 postType = "video",
@@ -336,13 +357,13 @@ private fun VideoPlayerSurface(
             }
         }
 
-        // Top Control Bar (Caption + Speed + Mute + Fullscreen)
+        // Top Control Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
+                        colors = listOf(Color.Black.copy(alpha = 0.70f), Color.Transparent)
                     )
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -363,7 +384,6 @@ private fun VideoPlayerSurface(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Playback Speed Pill
                 Surface(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -384,7 +404,7 @@ private fun VideoPlayerSurface(
                         }
                         .testTag("video_speed_button"),
                     shape = RoundedCornerShape(12.dp),
-                    color = Color.Black.copy(alpha = 0.45f)
+                    color = Color.Black.copy(alpha = 0.50f)
                 ) {
                     Text(
                         text = "${playbackSpeed}x",
@@ -394,7 +414,6 @@ private fun VideoPlayerSurface(
                     )
                 }
 
-                // Mute / Unmute Button
                 IconButton(
                     onClick = {
                         isMuted = !isMuted
@@ -416,7 +435,6 @@ private fun VideoPlayerSurface(
                     )
                 }
 
-                // Fullscreen / Close Fullscreen Button
                 IconButton(
                     onClick = onToggleFullscreen,
                     modifier = Modifier
@@ -433,18 +451,17 @@ private fun VideoPlayerSurface(
             }
         }
 
-        // Center Play / Pause / Skip Controls
+        // Center Controls
         Row(
             modifier = Modifier.align(Alignment.Center),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // -10s Rewind
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Color.Black.copy(alpha = 0.50f))
                     .clickable {
                         val target = (currentPositionMs - 10_000).coerceAtLeast(0)
                         currentPositionMs = target
@@ -463,12 +480,11 @@ private fun VideoPlayerSurface(
                 )
             }
 
-            // Center Play / Pause Button
             Box(
                 modifier = Modifier
                     .size(56.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.90f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f))
                     .clickable {
                         isPlaying = !isPlaying
                         if (!fallbackToCanvas) {
@@ -498,12 +514,11 @@ private fun VideoPlayerSurface(
                 }
             }
 
-            // +10s Fast Forward
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Color.Black.copy(alpha = 0.50f))
                     .clickable {
                         val target = (currentPositionMs + 10_000).coerceAtMost(totalDurationMs)
                         currentPositionMs = target
@@ -523,13 +538,13 @@ private fun VideoPlayerSurface(
             }
         }
 
-        // Bottom Scrubber & Duration Indicator
+        // Bottom Scrubber Bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f))
                     )
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -574,10 +589,7 @@ private fun VideoPlayerSurface(
 }
 
 /**
- * Smooth In-Built Audio Player Component
- * Plays any local/remote audio file (content://, file://, https://) via Android MediaPlayer,
- * and synthesizes a real calm acoustic soundscape for preset:// voice confessions so any audio
- * confession plays smoothly with animated waveform bars, scrubbing, and playback speed control.
+ * In-Built Audio Player Component
  */
 @Composable
 fun InbuiltAudioPlayer(
@@ -636,7 +648,6 @@ fun InbuiltAudioPlayer(
         }
     }
 
-    // Smoothly advance seekbar while playing
     LaunchedEffect(isPlaying, useSynthAudio, playbackSpeed) {
         while (isActive && isPlaying) {
             if (useSynthAudio) {
@@ -659,7 +670,6 @@ fun InbuiltAudioPlayer(
         }
     }
 
-    // Play real synthesized acoustic soundscape when playing a preset:// voice confession
     LaunchedEffect(isPlaying, useSynthAudio) {
         if (isPlaying && useSynthAudio) {
             withContext(Dispatchers.Default) {
@@ -700,7 +710,6 @@ fun InbuiltAudioPlayer(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Play / Pause Circular Button
                 Box(
                     modifier = Modifier
                         .size(46.dp)
@@ -761,7 +770,6 @@ fun InbuiltAudioPlayer(
                             )
                         }
 
-                        // Speed Chip (1.0x / 1.5x / 2.0x)
                         Surface(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
@@ -805,7 +813,6 @@ fun InbuiltAudioPlayer(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Animated 28-Bar Waveform Equalizer
                     val primaryColor = MaterialTheme.colorScheme.primary
                     val inactiveBarColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f)
                     Canvas(
@@ -841,7 +848,6 @@ fun InbuiltAudioPlayer(
                 }
             }
 
-            // Interactive Seekbar + Duration Timestamps
             Slider(
                 value = progressFraction,
                 onValueChange = { fraction ->
@@ -886,15 +892,11 @@ private fun formatMilliseconds(ms: Int): String {
     return String.format("%02d:%02d", mins, secs)
 }
 
-/**
- * Generates a gentle, warm harmonic ambient chord using Android AudioTrack
- * so preset voice/video confessions produce smooth audible sound without external file dependencies.
- */
 private fun playAmbientChordLoop(shouldContinue: () -> Boolean) {
     val sampleRate = 22050
     val bufferSamples = sampleRate / 5
     val buffer = ShortArray(bufferSamples)
-    val freqs = doubleArrayOf(261.63, 329.63, 392.00) // Warm C-major ambient triad
+    val freqs = doubleArrayOf(261.63, 329.63, 392.00)
     var sampleIndex = 0L
 
     val minBufSize = AudioTrack.getMinBufferSize(

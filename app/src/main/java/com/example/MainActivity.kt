@@ -43,6 +43,7 @@ import com.example.ui.components.AnonymousnetBottomBar
 import com.example.ui.components.PushNotificationHelper
 import com.example.ui.screens.ActivityNotificationsScreen
 import com.example.ui.screens.BlockedUsersSubScreen
+import com.example.ui.screens.ConversationChatSubScreen
 import com.example.ui.screens.CreateConfessionScreen
 import com.example.ui.screens.ExploreScreen
 import com.example.ui.screens.HomeFeedScreen
@@ -160,27 +161,37 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
         } else {
             localDarkTheme
         }
+        val activeColorTheme = remember(userAccount?.colorTheme, selectedColorThemeName) {
+            if (!userAccount?.colorTheme.isNullOrBlank()) {
+                AppColorTheme.fromKey(userAccount.colorTheme)
+            } else {
+                AppColorTheme.entries.firstOrNull { it.name == selectedColorThemeName } ?: AppColorTheme.VIOLET
+            }
+        }
+        val activeUseSystemFont = userAccount?.useSystemFont ?: useSystemFont
 
         AnonymousnetTheme(
             darkTheme = isDark,
-            colorTheme = selectedColorTheme,
-            useSystemFont = useSystemFont
+            colorTheme = activeColorTheme,
+            useSystemFont = activeUseSystemFont
         ) {
             AuthenticatedMainScaffold(
                 viewModel = viewModel,
                 currentUserId = user.uid,
                 isDarkTheme = isDark,
-                selectedColorTheme = selectedColorTheme,
-                useSystemFont = useSystemFont,
+                selectedColorTheme = activeColorTheme,
+                useSystemFont = activeUseSystemFont,
                 onToggleDarkTheme = {
                     localDarkTheme = !isDark
                     viewModel.toggleThemeMode(isDark)
                 },
                 onSelectColorTheme = { newTheme ->
                     selectedColorThemeName = newTheme.name
+                    viewModel.setColorTheme(newTheme.key)
                 },
                 onToggleSystemFont = { enabled ->
                     useSystemFont = enabled
+                    viewModel.setUseSystemFont(enabled)
                 }
             )
         }
@@ -221,9 +232,16 @@ private fun AuthenticatedMainScaffold(
     val savedPosts by viewModel.savedPostsState.collectAsStateWithLifecycle()
     val blockedUsers by viewModel.blockedUsersState.collectAsStateWithLifecycle()
     val notifications by viewModel.notificationsState.collectAsStateWithLifecycle()
+    val followedUids by viewModel.followedUids.collectAsStateWithLifecycle()
+    val followingList by viewModel.followingListState.collectAsStateWithLifecycle()
+    val conversations by viewModel.conversationsState.collectAsStateWithLifecycle()
+    val availableCategories by viewModel.availableCategories.collectAsStateWithLifecycle()
+    val selectedCategoryFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
+    val activeChatMessages by viewModel.activeChatMessages.collectAsStateWithLifecycle()
     val likedPostIds by viewModel.likedPostIds.collectAsStateWithLifecycle()
     val savedPostIds by viewModel.savedPostIds.collectAsStateWithLifecycle()
     val activePostComments by viewModel.activePostComments.collectAsStateWithLifecycle()
+    val usernameAvailability by viewModel.usernameAvailability.collectAsStateWithLifecycle()
     val snackbarMessage by viewModel.snackbarMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -274,10 +292,17 @@ private fun AuthenticatedMainScaffold(
                             comments = activePostComments,
                             isLiked = activeSubScreen.postId in likedPostIds,
                             isSaved = activeSubScreen.postId in savedPostIds,
+                            isFollowingAuthor = targetPost?.let { it.authorUid in followedUids } ?: false,
                             currentUserId = currentUserId,
                             onBack = { viewModel.popSubScreen() },
                             onToggleLike = { viewModel.toggleLike(it) },
                             onToggleSave = { viewModel.toggleSave(it) },
+                            onToggleFollow = { uid, handle -> viewModel.toggleFollowUser(uid, handle) },
+                            onSendMessageRequest = { msg ->
+                                targetPost?.let { p ->
+                                    viewModel.startPrivateMessageRequest(p.authorUid, p.anonymousHandle, msg)
+                                }
+                            },
                             onAddComment = { post, text -> viewModel.addCommentToPost(post, text) },
                             onDeleteComment = { post, cmtId -> viewModel.deleteComment(post, cmtId) },
                             onReportPost = { post ->
@@ -288,6 +313,19 @@ private fun AuthenticatedMainScaffold(
                             onBlockAuthor = { post -> viewModel.blockAuthor(post.authorUid, post.anonymousLabel) },
                             onDeleteOwnPost = { viewModel.deleteOwnPost(it) },
                             onRecordView = { viewModel.recordPostView(it) }
+                        )
+                    }
+                    is SubScreen.ConversationChat -> {
+                        ConversationChatSubScreen(
+                            conversationId = activeSubScreen.conversationId,
+                            otherUserHandle = activeSubScreen.otherUserHandle,
+                            otherUserUid = activeSubScreen.otherUserUid,
+                            currentUserId = currentUserId,
+                            messages = activeChatMessages,
+                            onBack = { viewModel.popSubScreen() },
+                            onSendMessage = { text ->
+                                viewModel.sendChatMessage(activeSubScreen.conversationId, activeSubScreen.otherUserUid, text)
+                            }
                         )
                     }
                     is SubScreen.MyPosts -> {
@@ -411,11 +449,15 @@ private fun AuthenticatedMainScaffold(
                         HomeFeedScreen(
                             feedState = filteredFeedPosts,
                             selectedSegment = feedSegment,
+                            selectedCategory = selectedCategoryFilter,
+                            availableCategories = availableCategories,
                             likedPostIds = likedPostIds,
                             savedPostIds = savedPostIds,
+                            followedUids = followedUids,
                             unreadNotificationCount = unreadNotificationsCount,
                             currentUserId = currentUserId,
                             onSelectSegment = { viewModel.setFeedSegment(it) },
+                            onSelectCategory = { viewModel.setCategoryFilter(it) },
                             onOpenNotifications = { viewModel.selectTab(MainTab.ACTIVITY) },
                             onOpenCreateConfession = { viewModel.selectTab(MainTab.CREATE) },
                             onOpenPostDetail = { post ->
@@ -423,6 +465,12 @@ private fun AuthenticatedMainScaffold(
                             },
                             onToggleLike = { viewModel.toggleLike(it) },
                             onToggleSave = { viewModel.toggleSave(it) },
+                            onToggleFollow = { authorUid, authorHandle ->
+                                viewModel.toggleFollowUser(authorUid, authorHandle)
+                            },
+                            onSendMessageRequest = { recipientUid, recipientHandle, msg ->
+                                viewModel.startPrivateMessageRequest(recipientUid, recipientHandle, msg)
+                            },
                             onHidePost = { viewModel.hidePostFromFeed(it) },
                             onBlockAuthor = { post ->
                                 viewModel.blockAuthor(post.authorUid, post.anonymousLabel)
@@ -440,10 +488,13 @@ private fun AuthenticatedMainScaffold(
                             explorePostsState = filteredExplorePosts,
                             selectedFilter = exploreFilter,
                             selectedSort = exploreSort,
+                            selectedCategory = selectedCategoryFilter,
+                            availableCategories = availableCategories,
                             searchQuery = exploreSearchQuery,
                             isSearchVisible = isExploreSearchVisible,
                             onSelectFilter = { viewModel.setExploreFilter(it) },
                             onSelectSort = { viewModel.setExploreSort(it) },
+                            onSelectCategory = { viewModel.setCategoryFilter(it) },
                             onSearchQueryChange = { viewModel.setExploreSearchQuery(it) },
                             onToggleSearch = { viewModel.toggleExploreSearch() },
                             onOpenPostDetail = { post ->
@@ -456,9 +507,11 @@ private fun AuthenticatedMainScaffold(
                         CreateConfessionScreen(
                             composerState = composerState,
                             drafts = draftsList,
+                            availableCategories = availableCategories,
                             onBackClick = { viewModel.selectTab(MainTab.HOME) },
                             onUpdateText = { viewModel.updateComposerText(it) },
                             onSelectType = { viewModel.updateComposerType(it) },
+                            onSelectCategory = { viewModel.updateComposerCategory(it) },
                             onUpdateKeepAnonymous = { viewModel.updateKeepAnonymous(it) },
                             onAttachMedia = { uri, cap, dur, mime ->
                                 viewModel.updateComposerMedia(uri, cap, dur, mime)
@@ -475,7 +528,23 @@ private fun AuthenticatedMainScaffold(
                     MainTab.ACTIVITY -> {
                         ActivityNotificationsScreen(
                             notifications = notifications,
-                            onMarkRead = { viewModel.markNotificationRead(it) }
+                            conversations = conversations,
+                            currentUserId = currentUserId,
+                            onMarkRead = { viewModel.markNotificationRead(it) },
+                            onOpenConversation = { conv ->
+                                val otherUid = if (conv.initiatorUid == currentUserId) conv.recipientUid else conv.initiatorUid
+                                val otherHandle = if (conv.initiatorUid == currentUserId) conv.recipientHandle else conv.initiatorHandle
+                                viewModel.pushSubScreen(
+                                    SubScreen.ConversationChat(
+                                        conversationId = conv.id,
+                                        otherUserHandle = otherHandle,
+                                        otherUserUid = otherUid
+                                    )
+                                )
+                            },
+                            onRespondToDmRequest = { convId, accept, block ->
+                                viewModel.respondToDmRequest(convId, accept, block)
+                            }
                         )
                     }
                     MainTab.PROFILE -> {
@@ -483,6 +552,7 @@ private fun AuthenticatedMainScaffold(
                             userAccount = userAccount,
                             publicProfile = (publicProfileState as? UiState.Success)?.data,
                             myPostsCount = myPostsList.size,
+                            followingCount = followingList.size,
                             isDarkTheme = isDarkTheme,
                             selectedColorTheme = selectedColorTheme,
                             useSystemFont = useSystemFont,
@@ -501,6 +571,12 @@ private fun AuthenticatedMainScaffold(
                             },
                             onLogOut = {
                                 signOutUser(credentialManager, {}, scope)
+                            },
+                            usernameAvailability = usernameAvailability,
+                            onCheckUsername = { viewModel.checkUsername(it) },
+                            onResetUsernameCheck = { viewModel.resetUsernameCheck() },
+                            onSaveUsernameAndDisplayName = { handle, displayName, onComplete ->
+                                viewModel.updateProfileAndUsername(handle, displayName, onComplete)
                             }
                         )
                     }

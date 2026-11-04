@@ -53,21 +53,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.ui.MainTab
-import com.example.ui.theme.AnonPrimaryIndigo
-import com.example.ui.theme.AnonPrimaryViolet
-import com.example.ui.theme.AnonVioletLight
-import com.example.ui.theme.AnonVioletPillBg
+import com.example.ui.theme.AnonHeartRed
 
-/**
- * Screen 1 Hero Illustration:
- * Hooded anonymous silhouette inside a soft violet/blue circular gradient glow
- * with a white mask, glowing eyes, and floating ellipsis speech bubble at bottom-right.
- */
 @Composable
 fun HoodedAnonymousHeroIllustration(
     modifier: Modifier = Modifier,
     size: Dp = 186.dp
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+
     Box(
         modifier = modifier.size(size),
         contentAlignment = Alignment.Center
@@ -78,12 +73,11 @@ fun HoodedAnonymousHeroIllustration(
             val center = Offset(w / 2f, h / 2f)
             val radius = w * 0.45f
 
-            // Outer soft ambient glow
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        Color(0xFF8B80FF).copy(alpha = 0.28f),
-                        Color(0xFF5950F2).copy(alpha = 0.0f)
+                        secondaryColor.copy(alpha = 0.28f),
+                        primaryColor.copy(alpha = 0.0f)
                     ),
                     center = center,
                     radius = w * 0.5f
@@ -92,12 +86,11 @@ fun HoodedAnonymousHeroIllustration(
                 center = center
             )
 
-            // Main circular backdrop gradient (lavender to sky-violet)
             drawCircle(
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFFA799FF),
-                        Color(0xFF8EC5FC),
+                        secondaryColor.copy(alpha = 0.7f),
+                        primaryColor.copy(alpha = 0.5f),
                         Color(0xFFD9D4FF)
                     ),
                     start = Offset(0f, 0f),
@@ -107,7 +100,6 @@ fun HoodedAnonymousHeroIllustration(
                 center = center
             )
 
-            // Shoulders / Cloak silhouette
             val cloakPath = Path().apply {
                 moveTo(w * 0.20f, h * 0.80f)
                 quadraticTo(w * 0.25f, h * 0.62f, w * 0.39f, h * 0.58f)
@@ -123,7 +115,6 @@ fun HoodedAnonymousHeroIllustration(
                 )
             )
 
-            // Outer Hood
             val hoodPath = Path().apply {
                 moveTo(w * 0.50f, h * 0.18f)
                 cubicTo(w * 0.66f, h * 0.22f, w * 0.72f, h * 0.42f, w * 0.68f, h * 0.62f)
@@ -138,7 +129,6 @@ fun HoodedAnonymousHeroIllustration(
                 )
             )
 
-            // Inner Hood shadow
             val innerHood = Path().apply {
                 moveTo(w * 0.50f, h * 0.25f)
                 cubicTo(w * 0.61f, h * 0.29f, w * 0.63f, h * 0.45f, w * 0.60f, h * 0.58f)
@@ -148,7 +138,6 @@ fun HoodedAnonymousHeroIllustration(
             }
             drawPath(path = innerHood, color = Color(0xFF171338))
 
-            // White stylized mask inside hood
             val maskPath = Path().apply {
                 moveTo(w * 0.41f, h * 0.38f)
                 lineTo(w * 0.59f, h * 0.38f)
@@ -158,7 +147,6 @@ fun HoodedAnonymousHeroIllustration(
             }
             drawPath(path = maskPath, color = Color(0xFFF6F5FF))
 
-            // Dark visor eyes on the mask
             drawRoundRect(
                 color = Color(0xFF241E54),
                 topLeft = Offset(w * 0.435f, h * 0.42f),
@@ -173,15 +161,14 @@ fun HoodedAnonymousHeroIllustration(
             )
         }
 
-        // Speech bubble with three violet dots at bottom right
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .offset(x = (-10).dp, y = (-12).dp)
                 .size(54.dp)
-                .shadow(10.dp, CircleShape, spotColor = AnonPrimaryViolet.copy(alpha = 0.35f)),
+                .shadow(10.dp, CircleShape, spotColor = primaryColor.copy(alpha = 0.35f)),
             shape = CircleShape,
-            color = Color.White
+            color = MaterialTheme.colorScheme.surface
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
@@ -194,7 +181,7 @@ fun HoodedAnonymousHeroIllustration(
                             .padding(horizontal = 2.5.dp)
                             .size(6.dp)
                             .clip(CircleShape)
-                            .background(if (idx == 1) AnonPrimaryViolet else AnonVioletLight)
+                            .background(if (idx == 1) primaryColor else secondaryColor)
                     )
                 }
             }
@@ -202,17 +189,16 @@ fun HoodedAnonymousHeroIllustration(
     }
 }
 
-/**
- * Anonymous Fedora Hat + Sunglasses Avatar (used in Feed cards, Profile header, and Anonymous Login button).
- */
 @Composable
 fun AnonymousHatAvatar(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
-    backgroundColor: Color = Color(0xFFEAE8FF),
-    iconTint: Color = Color(0xFF332D6B),
+    backgroundColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+    iconTint: Color = MaterialTheme.colorScheme.primary,
     showVerifiedBadge: Boolean = false
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     Box(
         modifier = modifier.size(size),
         contentAlignment = Alignment.Center
@@ -226,7 +212,6 @@ fun AnonymousHatAvatar(
             val w = this.size.width
             val h = this.size.height
 
-            // Soft lower shoulders
             val shoulderPath = Path().apply {
                 moveTo(w * 0.22f, h * 0.96f)
                 quadraticTo(w * 0.50f, h * 0.72f, w * 0.78f, h * 0.96f)
@@ -234,7 +219,6 @@ fun AnonymousHatAvatar(
             }
             drawPath(path = shoulderPath, color = iconTint.copy(alpha = 0.85f))
 
-            // Fedora Hat Crown
             val crownPath = Path().apply {
                 moveTo(w * 0.33f, h * 0.44f)
                 lineTo(w * 0.38f, h * 0.24f)
@@ -244,7 +228,6 @@ fun AnonymousHatAvatar(
             }
             drawPath(path = crownPath, color = iconTint)
 
-            // Fedora Brim
             drawRoundRect(
                 color = iconTint,
                 topLeft = Offset(w * 0.22f, h * 0.42f),
@@ -252,7 +235,6 @@ fun AnonymousHatAvatar(
                 cornerRadius = CornerRadius(12f, 12f)
             )
 
-            // Sunglasses Left & Right Lenses + Bridge
             drawRoundRect(
                 color = iconTint,
                 topLeft = Offset(w * 0.30f, h * 0.53f),
@@ -281,8 +263,8 @@ fun AnonymousHatAvatar(
                     .offset(x = (-2).dp, y = (-2).dp)
                     .size(size * 0.28f)
                     .clip(CircleShape)
-                    .background(AnonPrimaryViolet)
-                    .border(2.dp, Color.White, CircleShape),
+                    .background(primaryColor)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -296,18 +278,17 @@ fun AnonymousHatAvatar(
     }
 }
 
-/**
- * Screen 3 Illustration: Tilted Violet Confession Document + White Padlock Badge
- */
 @Composable
 fun CreateConfessionHeroIcon(
     modifier: Modifier = Modifier
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+
     Box(
         modifier = modifier.size(104.dp),
         contentAlignment = Alignment.Center
     ) {
-        // Soft circular glow behind document
         Box(
             modifier = Modifier
                 .size(92.dp)
@@ -315,23 +296,22 @@ fun CreateConfessionHeroIcon(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            AnonVioletLight.copy(alpha = 0.25f),
+                            secondaryColor.copy(alpha = 0.25f),
                             Color.Transparent
                         )
                     )
                 )
         )
 
-        // Tilted violet paper card
         Box(
             modifier = Modifier
                 .size(width = 64.dp, height = 74.dp)
                 .rotate(-10f)
-                .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = AnonPrimaryViolet)
+                .shadow(12.dp, RoundedCornerShape(16.dp), spotColor = primaryColor)
                 .clip(RoundedCornerShape(16.dp))
                 .background(
                     Brush.linearGradient(
-                        colors = listOf(Color(0xFF7B73FF), AnonPrimaryViolet)
+                        colors = listOf(secondaryColor, primaryColor)
                     )
                 )
                 .padding(14.dp)
@@ -363,21 +343,20 @@ fun CreateConfessionHeroIcon(
             }
         }
 
-        // Padlock circle badge at bottom right
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .offset(x = (-6).dp, y = (-6).dp)
                 .size(40.dp)
-                .shadow(8.dp, CircleShape, spotColor = AnonPrimaryViolet.copy(alpha = 0.3f)),
+                .shadow(8.dp, CircleShape, spotColor = primaryColor.copy(alpha = 0.3f)),
             shape = CircleShape,
-            color = Color.White
+            color = MaterialTheme.colorScheme.surface
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Filled.Lock,
                     contentDescription = "Encrypted & Anonymous",
-                    tint = Color(0xFF282356),
+                    tint = primaryColor,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -385,10 +364,6 @@ fun CreateConfessionHeroIcon(
     }
 }
 
-/**
- * Custom Canvas Artwork for Explore Grid Cards (matching the 4 scenes in Screen 4 reference:
- * Sunset Sky, Warm Coffee Cup, Dream Silhouette at Sunset, and Birds in Evening Sky).
- */
 @Composable
 fun ExplorePresetArtwork(
     presetUri: String?,
@@ -410,7 +385,6 @@ fun ExplorePresetArtwork(
                         )
                     )
                 )
-                // Soft clouds
                 drawOval(
                     color = Color(0xFFFFB5A7).copy(alpha = 0.32f),
                     topLeft = Offset(w * 0.1f, h * 0.28f),
@@ -432,25 +406,21 @@ fun ExplorePresetArtwork(
                         )
                     )
                 )
-                // Saucer
                 drawOval(
                     color = Color(0xFFEFECE6),
                     topLeft = Offset(w * 0.16f, h * 0.40f),
                     size = Size(w * 0.68f, h * 0.34f)
                 )
-                // Cup rim
                 drawCircle(
                     color = Color(0xFFFDFBF7),
                     radius = w * 0.24f,
                     center = Offset(w * 0.50f, h * 0.50f)
                 )
-                // Latte crema
                 drawCircle(
                     color = Color(0xFFC68B59),
                     radius = w * 0.20f,
                     center = Offset(w * 0.50f, h * 0.50f)
                 )
-                // Latte heart art
                 drawCircle(
                     color = Color(0xFFFDFBF7),
                     radius = w * 0.06f,
@@ -468,7 +438,6 @@ fun ExplorePresetArtwork(
                         )
                     )
                 )
-                // Person silhouette looking at horizon
                 drawCircle(
                     color = Color(0xFF0E0D14),
                     radius = w * 0.11f,
@@ -493,7 +462,6 @@ fun ExplorePresetArtwork(
                         )
                     )
                 )
-                // Small flying birds
                 val birdPositions = listOf(
                     Offset(w * 0.35f, h * 0.35f),
                     Offset(w * 0.52f, h * 0.28f),
@@ -526,7 +494,7 @@ fun ExplorePresetArtwork(
 
 /**
  * Floating Rounded Bottom Navigation Bar (shared across Feed, Create, Explore, Activity, and Profile)
- * Matches the exact geometry, active pill/circle treatment, and centered violet + FAB in the 5-screen specification.
+ * Synchronized with the active MaterialTheme primary color so any theme changes immediately apply to the navigation bar.
  */
 @Composable
 fun AnonymousnetBottomBar(
@@ -535,6 +503,10 @@ fun AnonymousnetBottomBar(
     onSelectTab: (MainTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val activePillBg = activeColor.copy(alpha = 0.14f)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -549,7 +521,7 @@ fun AnonymousnetBottomBar(
                 .shadow(
                     elevation = 16.dp,
                     shape = RoundedCornerShape(32.dp),
-                    spotColor = AnonPrimaryViolet.copy(alpha = 0.18f)
+                    spotColor = activeColor.copy(alpha = 0.22f)
                 ),
             shape = RoundedCornerShape(32.dp),
             color = MaterialTheme.colorScheme.surface
@@ -564,6 +536,7 @@ fun AnonymousnetBottomBar(
                 // 1. Home
                 BottomBarIconItem(
                     selected = currentTab == MainTab.HOME,
+                    activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.HOME) },
                     testTag = "nav_home_button",
                     contentDescription = "Home Feed"
@@ -571,7 +544,7 @@ fun AnonymousnetBottomBar(
                     Icon(
                         imageVector = if (currentTab == MainTab.HOME) Icons.Filled.Home else Icons.Outlined.Home,
                         contentDescription = "Home Feed",
-                        tint = if (currentTab == MainTab.HOME) AnonPrimaryViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (currentTab == MainTab.HOME) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -579,6 +552,7 @@ fun AnonymousnetBottomBar(
                 // 2. Explore
                 BottomBarIconItem(
                     selected = currentTab == MainTab.EXPLORE,
+                    activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.EXPLORE) },
                     testTag = "nav_explore_button",
                     contentDescription = "Explore"
@@ -586,20 +560,20 @@ fun AnonymousnetBottomBar(
                     Icon(
                         imageVector = if (currentTab == MainTab.EXPLORE) Icons.Filled.Explore else Icons.Outlined.Explore,
                         contentDescription = "Explore",
-                        tint = if (currentTab == MainTab.EXPLORE) AnonPrimaryViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (currentTab == MainTab.EXPLORE) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
 
-                // 3. Center Create (+) Vivid Violet Circle Button
+                // 3. Center Create (+) Active Themed Circle Button
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .shadow(10.dp, CircleShape, spotColor = AnonPrimaryViolet)
+                        .shadow(10.dp, CircleShape, spotColor = activeColor.copy(alpha = 0.5f))
                         .clip(CircleShape)
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(Color(0xFF6B63FF), AnonPrimaryViolet, AnonPrimaryIndigo)
+                                colors = listOf(secondaryColor, activeColor)
                             )
                         )
                         .clickable { onSelectTab(MainTab.CREATE) }
@@ -614,18 +588,19 @@ fun AnonymousnetBottomBar(
                     )
                 }
 
-                // 4. Activity / Inbox
+                // 4. Activity / Inbox / Direct Messages
                 BottomBarIconItem(
                     selected = currentTab == MainTab.ACTIVITY,
+                    activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.ACTIVITY) },
                     testTag = "nav_activity_button",
-                    contentDescription = "Activity and Notifications"
+                    contentDescription = "Activity and Messages"
                 ) {
                     Box {
                         Icon(
                             imageVector = Icons.Outlined.ChatBubbleOutline,
                             contentDescription = "Activity",
-                            tint = if (currentTab == MainTab.ACTIVITY) AnonPrimaryViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (currentTab == MainTab.ACTIVITY) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(23.dp)
                         )
                         if (unreadNotificationCount > 0) {
@@ -635,7 +610,7 @@ fun AnonymousnetBottomBar(
                                     .offset(x = 2.dp, y = (-2).dp)
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFFEF4444))
+                                    .background(AnonHeartRed)
                             )
                         }
                     }
@@ -644,6 +619,7 @@ fun AnonymousnetBottomBar(
                 // 5. Profile
                 BottomBarIconItem(
                     selected = currentTab == MainTab.PROFILE,
+                    activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.PROFILE) },
                     testTag = "nav_profile_button",
                     contentDescription = "Profile and Settings"
@@ -651,7 +627,7 @@ fun AnonymousnetBottomBar(
                     Icon(
                         imageVector = if (currentTab == MainTab.PROFILE) Icons.Filled.Person else Icons.Outlined.PersonOutline,
                         contentDescription = "Profile",
-                        tint = if (currentTab == MainTab.PROFILE) AnonPrimaryViolet else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (currentTab == MainTab.PROFILE) activeColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -663,6 +639,7 @@ fun AnonymousnetBottomBar(
 @Composable
 private fun BottomBarIconItem(
     selected: Boolean,
+    activeBg: Color,
     onClick: () -> Unit,
     testTag: String,
     contentDescription: String,
@@ -672,7 +649,7 @@ private fun BottomBarIconItem(
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (selected) AnonVioletPillBg else Color.Transparent)
+            .background(if (selected) activeBg else Color.Transparent)
             .clickable(onClick = onClick)
             .testTag(testTag),
         contentAlignment = Alignment.Center

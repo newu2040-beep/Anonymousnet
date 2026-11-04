@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -21,12 +22,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,37 +57,203 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.BlockedUserRef
 import com.example.data.ConfessionPost
+import com.example.data.Conversation
+import com.example.data.DirectMessage
 import com.example.data.PostComment
 import com.example.data.SavedOrLikedPostRef
 import com.example.data.UserNotification
 import com.example.ui.components.AnonymousHatAvatar
 import com.example.ui.theme.AnonHeartRed
-import com.example.ui.theme.AnonPrimaryViolet
 
 /**
- * Activity / Notifications Screen (opened via bottom Activity icon or top-right bell on Home)
+ * Activity & Inbox Screen: Shows real-time Activity & Safety Notices,
+ * as well as Direct Message Conversations with Request & Acceptance system.
  */
 @Composable
 fun ActivityNotificationsScreen(
     notifications: List<UserNotification>,
-    onMarkRead: (String) -> Unit
+    conversations: List<Conversation>,
+    currentUserId: String,
+    onMarkRead: (String) -> Unit,
+    onOpenConversation: (Conversation) -> Unit,
+    onRespondToDmRequest: (conversationId: String, accept: Boolean, block: Boolean) -> Unit
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .testTag("activity_notifications_list"),
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 104.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Direct Messages Section Header
         item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Direct Messages (${conversations.size})",
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+
+        if (conversations.isEmpty()) {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Mail,
+                            contentDescription = null,
+                            tint = primaryColor,
+                            modifier = Modifier.size(30.dp)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "No private messages yet",
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp)
+                        )
+                        Text(
+                            text = "Tap the three dots on any confession to send a private message request.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            items(conversations, key = { it.id }) { conv ->
+                val isInitiator = conv.initiatorUid == currentUserId
+                val otherHandle = if (isInitiator) conv.recipientHandle else conv.initiatorHandle
+                val otherUid = if (isInitiator) conv.recipientUid else conv.initiatorUid
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable {
+                            if (conv.status == "accepted" || isInitiator) {
+                                onOpenConversation(conv)
+                            }
+                        },
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AnonymousHatAvatar(size = 38.dp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = otherHandle,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = conv.lastMessageText.ifBlank { "Message request" },
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                            // Status Pill
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = when (conv.status) {
+                                    "accepted" -> primaryColor.copy(alpha = 0.15f)
+                                    "pending" -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                    else -> MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                }
+                            ) {
+                                Text(
+                                    text = conv.status.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = when (conv.status) {
+                                        "accepted" -> primaryColor
+                                        "pending" -> Color(0xFFD97706)
+                                        else -> MaterialTheme.colorScheme.error
+                                    },
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        // Message Request Accept/Decline/Block Controls for Recipient
+                        if (!isInitiator && conv.status == "pending") {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { onRespondToDmRequest(conv.id, true, false) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                                ) {
+                                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Accept", fontSize = 12.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { onRespondToDmRequest(conv.id, false, false) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Decline", fontSize = 12.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { onRespondToDmRequest(conv.id, false, true) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Block, contentDescription = null, tint = AnonHeartRed, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Block", color = AnonHeartRed, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Activity & Safety Notices Section Header
+        item {
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Activity & Safety Notices",
                 style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 ),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(vertical = 4.dp)
+                color = MaterialTheme.colorScheme.onBackground
             )
         }
 
@@ -89,26 +261,26 @@ fun ActivityNotificationsScreen(
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.surface
                 ) {
                     Column(
-                        modifier = Modifier.padding(28.dp),
+                        modifier = Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Notifications,
                             contentDescription = null,
-                            tint = AnonPrimaryViolet,
-                            modifier = Modifier.size(36.dp)
+                            tint = primaryColor,
+                            modifier = Modifier.size(32.dp)
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "You're all caught up",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "Replies to your confessions and safety updates appear here without exposing sensitive text on your lock screen.",
+                            text = "Replies, likes, follows, and direct message alerts appear here in real time.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -123,7 +295,7 @@ fun ActivityNotificationsScreen(
                         .clip(RoundedCornerShape(20.dp))
                         .clickable { onMarkRead(notif.id) },
                     shape = RoundedCornerShape(20.dp),
-                    color = if (notif.isRead) MaterialTheme.colorScheme.surface else AnonPrimaryViolet.copy(alpha = 0.08f)
+                    color = if (notif.isRead) MaterialTheme.colorScheme.surface else primaryColor.copy(alpha = 0.08f)
                 ) {
                     Row(
                         modifier = Modifier
@@ -135,13 +307,13 @@ fun ActivityNotificationsScreen(
                             modifier = Modifier
                                 .size(42.dp)
                                 .clip(CircleShape)
-                                .background(AnonPrimaryViolet.copy(alpha = 0.15f)),
+                                .background(primaryColor.copy(alpha = 0.15f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Security,
                                 contentDescription = null,
-                                tint = AnonPrimaryViolet
+                                tint = primaryColor
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -166,7 +338,113 @@ fun ActivityNotificationsScreen(
 }
 
 /**
- * Full Post Detail View with Real-Time Anonymous Comments & Engagement Actions
+ * Real-Time Direct Message Chat SubScreen
+ */
+@Composable
+fun ConversationChatSubScreen(
+    conversationId: String,
+    otherUserHandle: String,
+    otherUserUid: String,
+    currentUserId: String,
+    messages: List<DirectMessage>,
+    onBack: () -> Unit,
+    onSendMessage: (String) -> Unit
+) {
+    var messageInput by remember { mutableStateOf("") }
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 18.dp, vertical = 12.dp)
+    ) {
+        SubScreenTopBar(title = otherUserHandle, onBack = onBack)
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (messages.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "Start of confidential conversation with $otherUserHandle.\nZero legal identities are exposed.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                items(messages, key = { it.id }) { msg ->
+                    val isMe = msg.senderUid == currentUserId
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomStart = if (isMe) 16.dp else 4.dp,
+                                bottomEnd = if (isMe) 4.dp else 16.dp
+                            ),
+                            color = if (isMe) primaryColor else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Text(
+                                text = msg.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom Message Composer
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 96.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = messageInput,
+                onValueChange = { if (it.length <= 1000) messageInput = it },
+                placeholder = { Text("Write private message...") },
+                shape = RoundedCornerShape(24.dp),
+                singleLine = true,
+                modifier = Modifier.weight(1f).testTag("chat_input_field")
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            IconButton(
+                onClick = {
+                    if (messageInput.isNotBlank()) {
+                        onSendMessage(messageInput)
+                        messageInput = ""
+                    }
+                },
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(primaryColor)
+                    .testTag("send_chat_button")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Send,
+                    contentDescription = "Send",
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Post Detail SubScreen
  */
 @Composable
 fun PostDetailSubScreen(
@@ -174,10 +452,13 @@ fun PostDetailSubScreen(
     comments: List<PostComment>,
     isLiked: Boolean,
     isSaved: Boolean,
+    isFollowingAuthor: Boolean = false,
     currentUserId: String,
     onBack: () -> Unit,
     onToggleLike: (ConfessionPost) -> Unit,
     onToggleSave: (ConfessionPost) -> Unit,
+    onToggleFollow: (authorUid: String, authorHandle: String) -> Unit = { _, _ -> },
+    onSendMessageRequest: (String) -> Unit = {},
     onAddComment: (ConfessionPost, String) -> Unit,
     onDeleteComment: (ConfessionPost, String) -> Unit,
     onReportPost: (ConfessionPost) -> Unit,
@@ -186,6 +467,7 @@ fun PostDetailSubScreen(
     onRecordView: (ConfessionPost) -> Unit
 ) {
     var commentInput by remember { mutableStateOf("") }
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     LaunchedEffect(post?.id) {
         if (post != null) {
@@ -215,11 +497,13 @@ fun PostDetailSubScreen(
                         post = post,
                         isLiked = isLiked,
                         isSaved = isSaved,
+                        isFollowingAuthor = isFollowingAuthor,
                         isOwnPost = post.authorUid == currentUserId,
                         onCardClick = {},
                         onLikeClick = { onToggleLike(post) },
                         onCommentClick = {},
-                        onShareClick = {},
+                        onToggleFollow = { onToggleFollow(post.authorUid, post.anonymousHandle) },
+                        onSendMessageRequest = onSendMessageRequest,
                         onSaveClick = { onToggleSave(post) },
                         onHideClick = onBack,
                         onBlockAuthorClick = { onBlockAuthor(post) },
@@ -319,7 +603,7 @@ fun PostDetailSubScreen(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(AnonPrimaryViolet)
+                        .background(primaryColor)
                         .testTag("submit_comment_button")
                 ) {
                     Icon(
@@ -334,7 +618,7 @@ fun PostDetailSubScreen(
 }
 
 /**
- * Report Flow SubScreen (Section 9: harassment, threats, self-harm, sexual exploitation, hate, spam, impersonation, privacy, illegal, other)
+ * Report Flow SubScreen
  */
 @Composable
 fun ReportFlowSubScreen(
@@ -358,6 +642,7 @@ fun ReportFlowSubScreen(
     )
     var selectedReason by remember { mutableStateOf("harassment") }
     var details by remember { mutableStateOf("") }
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     LazyColumn(
         modifier = Modifier
@@ -366,9 +651,7 @@ fun ReportFlowSubScreen(
         contentPadding = PaddingValues(top = 12.dp, bottom = 108.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
-            SubScreenTopBar(title = "Report $targetLabel", onBack = onBack)
-        }
+        item { SubScreenTopBar(title = "Report $targetLabel", onBack = onBack) }
         item {
             Text(
                 text = "Select a reason so our safety team can review this content promptly. Reports are strictly confidential.",
@@ -417,7 +700,7 @@ fun ReportFlowSubScreen(
                     .height(52.dp)
                     .testTag("submit_report_confirm_button"),
                 shape = RoundedCornerShape(26.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AnonPrimaryViolet)
+                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
             ) {
                 Text("Submit Safety Report", style = MaterialTheme.typography.titleMedium)
             }
@@ -426,7 +709,7 @@ fun ReportFlowSubScreen(
 }
 
 /**
- * Reusable Sub-Screens for My Posts, Saved Posts, Liked Posts, Blocked Users, Stay Anonymous Always, Help & Support, and About
+ * Reusable Sub-Screens
  */
 @Composable
 fun SavedOrLikedListSubScreen(
@@ -472,7 +755,7 @@ fun SavedOrLikedListSubScreen(
                         Text(
                             text = ref.anonymousLabel,
                             style = MaterialTheme.typography.labelLarge,
-                            color = AnonPrimaryViolet
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -539,6 +822,8 @@ fun InfoDetailSubScreen(
     paragraphs: List<String>,
     onBack: () -> Unit
 ) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -560,7 +845,7 @@ fun InfoDetailSubScreen(
                     Icon(
                         imageVector = Icons.Filled.CheckCircle,
                         contentDescription = null,
-                        tint = AnonPrimaryViolet,
+                        tint = primaryColor,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))

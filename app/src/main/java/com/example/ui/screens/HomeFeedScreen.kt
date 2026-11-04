@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,19 +20,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PersonRemove
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,12 +47,15 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,34 +79,42 @@ import com.example.ui.components.AnonymousHatAvatar
 import com.example.ui.components.ExplorePresetArtwork
 import com.example.ui.components.InbuiltAudioPlayer
 import com.example.ui.components.InbuiltVideoPlayer
+import com.example.ui.components.MediaSaveHelper
 import com.example.ui.theme.AnonHeartRed
 import com.google.firebase.Timestamp
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /**
  * Screen 2 — Home / Confession Feed
- * Includes in-built smooth Video Player and Audio Player directly in confession cards.
+ * Real-time synchronization for likes, comments, categories, video aspect ratio preservation,
+ * follow/unfollow toggle, and Save to Device option in the 3-dot overflow menu.
  */
 @Composable
 fun HomeFeedScreen(
     feedState: UiState<List<ConfessionPost>>,
     selectedSegment: FeedSegment,
+    selectedCategory: String?,
+    availableCategories: List<String>,
     likedPostIds: Set<String>,
     savedPostIds: Set<String>,
+    followedUids: Set<String>,
     unreadNotificationCount: Int,
     currentUserId: String,
     onSelectSegment: (FeedSegment) -> Unit,
+    onSelectCategory: (String?) -> Unit,
     onOpenNotifications: () -> Unit,
     onOpenCreateConfession: () -> Unit,
     onOpenPostDetail: (ConfessionPost) -> Unit,
     onToggleLike: (ConfessionPost) -> Unit,
     onToggleSave: (ConfessionPost) -> Unit,
+    onToggleFollow: (authorUid: String, authorHandle: String) -> Unit,
+    onSendMessageRequest: (recipientUid: String, recipientHandle: String, messageText: String) -> Unit,
     onHidePost: (String) -> Unit,
     onBlockAuthor: (ConfessionPost) -> Unit,
     onReportPost: (ConfessionPost) -> Unit,
     onDeleteOwnPost: (String) -> Unit
 ) {
-    val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
 
     LazyColumn(
@@ -111,7 +129,7 @@ fun HomeFeedScreen(
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. Compact Header: Anonymousnet wordmark on left; notification bell with unread indicator on right
+        // 1. Compact Header: Anonymousnet wordmark on left; notification bell on right
         item {
             Row(
                 modifier = Modifier
@@ -191,14 +209,59 @@ fun HomeFeedScreen(
             }
         }
 
-        // 3. Featured CTA Banner Card: "Share anything anonymously..." + "+ Post Confession"
+        // 3. Category Filter Chips (Category-Based Browsing)
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val allSelected = selectedCategory == null
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onSelectCategory(null) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (allSelected) primaryColor else MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "All Topics",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = if (allSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                    )
+                }
+
+                availableCategories.forEach { cat ->
+                    val isCatSelected = selectedCategory.equals(cat, ignoreCase = true)
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onSelectCategory(cat) },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isCatSelected) primaryColor else MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Text(
+                            text = cat,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (isCatSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Featured CTA Banner Card: "Share anything anonymously..." + "+ Post Confession"
         item {
             FeaturedConfessionCtaCard(
                 onPostConfessionClick = onOpenCreateConfession
             )
         }
 
-        // 4. Stream of Confession Post Cards
+        // 5. Stream of Confession Post Cards
         when (feedState) {
             is UiState.Loading -> {
                 item {
@@ -246,7 +309,7 @@ fun HomeFeedScreen(
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "No confessions in this view yet",
+                                    text = if (selectedCategory != null) "No confessions in category '$selectedCategory'" else "No confessions in this view yet",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -273,20 +336,13 @@ fun HomeFeedScreen(
                             post = post,
                             isLiked = post.id in likedPostIds,
                             isSaved = post.id in savedPostIds,
+                            isFollowingAuthor = post.authorUid in followedUids,
                             isOwnPost = post.authorUid == currentUserId,
                             onCardClick = { onOpenPostDetail(post) },
                             onLikeClick = { onToggleLike(post) },
                             onCommentClick = { onOpenPostDetail(post) },
-                            onShareClick = {
-                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "Anonymous confession on Anonymousnet:\n\"${post.text}\"\nhttps://anonymousnet.app/post/${post.id}"
-                                    )
-                                }
-                                context.startActivity(Intent.createChooser(sendIntent, "Share Confession"))
-                            },
+                            onToggleFollow = { onToggleFollow(post.authorUid, post.anonymousHandle) },
+                            onSendMessageRequest = { msg -> onSendMessageRequest(post.authorUid, post.anonymousHandle, msg) },
                             onSaveClick = { onToggleSave(post) },
                             onHideClick = { onHidePost(post.id) },
                             onBlockAuthorClick = { onBlockAuthor(post) },
@@ -318,10 +374,7 @@ private fun FeaturedConfessionCtaCard(
             .clip(RoundedCornerShape(26.dp))
             .background(
                 Brush.linearGradient(
-                    colors = listOf(
-                        primaryColor,
-                        secondaryColor
-                    ),
+                    colors = listOf(primaryColor, secondaryColor),
                     start = Offset(0f, 0f),
                     end = Offset(900f, 500f)
                 )
@@ -341,9 +394,7 @@ private fun FeaturedConfessionCtaCard(
             )
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -427,18 +478,24 @@ fun ConfessionPostCard(
     post: ConfessionPost,
     isLiked: Boolean,
     isSaved: Boolean,
+    isFollowingAuthor: Boolean = false,
     isOwnPost: Boolean,
     onCardClick: () -> Unit,
     onLikeClick: () -> Unit,
     onCommentClick: () -> Unit,
-    onShareClick: () -> Unit,
+    onToggleFollow: () -> Unit = {},
+    onSendMessageRequest: (String) -> Unit = {},
     onSaveClick: () -> Unit,
     onHideClick: () -> Unit,
     onBlockAuthorClick: () -> Unit,
     onReportClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var menuExpanded by remember { mutableStateOf(false) }
+    var showMessageRequestDialog by remember { mutableStateOf(false) }
+    var dmMessageText by remember { mutableStateOf("") }
     val primaryColor = MaterialTheme.colorScheme.primary
 
     Surface(
@@ -460,27 +517,73 @@ fun ConfessionPostCard(
                 .fillMaxWidth()
                 .padding(18.dp)
         ) {
-            // Top Row: Avatar + Anonymous + relative timestamp + overflow menu
+            // Top Row: Avatar + Anonymous identity + Category chip + Follow + Overflow menu
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AnonymousHatAvatar(size = 42.dp)
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = post.anonymousLabel.ifEmpty { "Anonymous" },
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        // Category Pill
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = primaryColor.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = post.category.ifBlank { "General" },
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = primaryColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Text(
-                        text = post.anonymousLabel.ifEmpty { "Anonymous" },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = formatRelativeTimestamp(post.createdAt, post.id),
+                        text = "${post.anonymousHandle} • ${formatRelativeTimestamp(post.createdAt, post.id)}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                if (!isOwnPost) {
+                    // Follow / Unfollow Button
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(onClick = onToggleFollow)
+                            .testTag("follow_author_${post.id}"),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isFollowingAuthor) MaterialTheme.colorScheme.surfaceVariant else primaryColor.copy(alpha = 0.14f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isFollowingAuthor) Icons.Filled.PersonRemove else Icons.Filled.PersonAdd,
+                                contentDescription = if (isFollowingAuthor) "Unfollow" else "Follow",
+                                tint = if (isFollowingAuthor) MaterialTheme.colorScheme.onSurface else primaryColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isFollowingAuthor) "Following" else "Follow",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (isFollowingAuthor) MaterialTheme.colorScheme.onSurface else primaryColor
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
 
                 Box {
@@ -501,6 +604,47 @@ fun ConfessionPostCard(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
+                        // Save to Device Option (Preserves original quality video, audio, image)
+                        if (!post.mediaUri.isNullOrBlank() || post.type == "video" || post.type == "audio") {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Save to Device (Original Quality)")
+                                    }
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    scope.launch {
+                                        MediaSaveHelper.saveMediaToDevice(
+                                            context = context,
+                                            mediaUriString = post.mediaUri ?: "preset://${post.type}",
+                                            mimeType = post.mediaMimeType,
+                                            type = post.type,
+                                            caption = post.mediaCaption ?: post.text
+                                        )
+                                    }
+                                }
+                            )
+                        }
+
+                        if (!isOwnPost) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.Mail, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Send Private Message Request")
+                                    }
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    showMessageRequestDialog = true
+                                }
+                            )
+                        }
+
                         DropdownMenuItem(
                             text = { Text("Report Confession") },
                             onClick = {
@@ -528,7 +672,14 @@ fun ConfessionPostCard(
                             text = { Text("Share Link") },
                             onClick = {
                                 menuExpanded = false
-                                onShareClick()
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "Anonymous confession on Anonymousnet:\n\"${post.text}\"\nhttps://anonymousnet.app/post/${post.id}"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "Share Confession"))
                             }
                         )
                         if (isOwnPost) {
@@ -557,7 +708,7 @@ fun ConfessionPostCard(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // In-built Video Player, Audio Player, or Image Viewer
+            // In-built Video Player (preserves original aspect ratio), Audio Player, or Image Viewer
             if (!post.mediaUri.isNullOrBlank() || post.type == "video" || post.type == "audio") {
                 Spacer(modifier = Modifier.height(12.dp))
                 when {
@@ -581,7 +732,7 @@ fun ConfessionPostCard(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(185.dp)
+                                .height(210.dp)
                                 .clip(RoundedCornerShape(18.dp))
                         ) {
                             if (post.mediaUri.startsWith("preset://")) {
@@ -594,7 +745,7 @@ fun ConfessionPostCard(
                                 AsyncImage(
                                     model = post.mediaUri,
                                     contentDescription = post.mediaCaption ?: "Confession attachment",
-                                    contentScale = ContentScale.Crop,
+                                    contentScale = ContentScale.Fit,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -603,146 +754,166 @@ fun ConfessionPostCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Reaction Row
+            // Engagement Bar: Likes, Comments, Share, Save
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Like Pill
-                    Surface(
+                    // Like button + count
+                    Row(
                         modifier = Modifier
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
                             .clickable(onClick = onLikeClick)
-                            .testTag("like_button_${post.id}"),
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (isLiked) AnonHeartRed.copy(alpha = 0.12f) else MaterialTheme.colorScheme.secondaryContainer
+                            .testTag("post_like_${post.id}"),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                contentDescription = "Like",
-                                tint = if (isLiked) AnonHeartRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = formatCompactCount(post.likeCount),
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (isLiked) AnonHeartRed else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = "Like",
+                            tint = if (isLiked) AnonHeartRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = post.likeCount.toString(),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
 
-                    // Comment Pill
-                    Surface(
+                    // Comment button + count
+                    Row(
                         modifier = Modifier
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(18.dp))
                             .clickable(onClick = onCommentClick)
-                            .testTag("comment_button_${post.id}"),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
+                            .testTag("post_comment_${post.id}"),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = "Comments",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = formatCompactCount(post.commentCount),
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                            contentDescription = "Comments",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = post.commentCount.toString(),
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    // Share
+                    IconButton(
+                        onClick = {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    "Anonymous confession:\n\"${post.text}\"\nhttps://anonymousnet.app/post/${post.id}"
+                                )
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share Confession"))
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Share,
+                            contentDescription = "Share",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(19.dp)
+                        )
                     }
                 }
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Bookmark / Save
+                IconButton(
+                    onClick = onSaveClick,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("post_save_${post.id}")
                 ) {
-                    // Share Circle Button
-                    Surface(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onShareClick)
-                            .testTag("share_button_${post.id}"),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Outlined.Share,
-                                contentDescription = "Share Confession",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(17.dp)
-                            )
-                        }
-                    }
-
-                    // Bookmark / Save Circle Button
-                    Surface(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable(onClick = onSaveClick)
-                            .testTag("save_button_${post.id}"),
-                        shape = CircleShape,
-                        color = if (isSaved) primaryColor.copy(alpha = 0.14f) else MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                                contentDescription = "Save Confession",
-                                tint = if (isSaved) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
+                    Icon(
+                        imageVector = if (isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                        contentDescription = if (isSaved) "Remove from Saved" else "Save Post",
+                        tint = if (isSaved) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(21.dp)
+                    )
                 }
             }
         }
     }
-}
 
-fun formatCompactCount(count: Long): String {
-    return when {
-        count >= 1_000_000L -> String.format("%.1fM", count / 1_000_000.0)
-        count >= 1_000L -> String.format("%.1fK", count / 1_000.0).replace(".0K", "K")
-        else -> count.toString()
+    // Direct Message Request Prompt Dialog
+    if (showMessageRequestDialog) {
+        AlertDialog(
+            onDismissRequest = { showMessageRequestDialog = false },
+            title = { Text("Send Message Request", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Send a private direct message request to ${post.anonymousHandle}. The recipient must explicitly accept before real-time chat begins.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedTextField(
+                        value = dmMessageText,
+                        onValueChange = { if (it.length <= 500) dmMessageText = it },
+                        placeholder = { Text("Write your message...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (dmMessageText.isNotBlank()) {
+                            onSendMessageRequest(dmMessageText)
+                            showMessageRequestDialog = false
+                            dmMessageText = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                ) {
+                    Text("Send Request")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMessageRequestDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
-fun formatRelativeTimestamp(timestamp: Timestamp?, postId: String = ""): String {
-    if (postId == "seed_post_1") return "2h ago"
-    if (postId == "seed_post_2") return "3h ago"
-    if (timestamp == null) return "Just now"
-    val diffMillis = (System.currentTimeMillis() - timestamp.toDate().time).coerceAtLeast(0L)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(diffMillis)
-    val hours = TimeUnit.MILLISECONDS.toHours(diffMillis)
-    val days = TimeUnit.MILLISECONDS.toDays(diffMillis)
+private fun formatRelativeTimestamp(timestamp: Timestamp?, fallbackId: String): String {
+    if (timestamp == null) {
+        return when {
+            fallbackId.contains("2h") -> "2h ago"
+            fallbackId.contains("3h") -> "3h ago"
+            fallbackId.contains("explore_1") -> "4h ago"
+            fallbackId.contains("explore_2") -> "5h ago"
+            fallbackId.contains("explore_3") -> "6h ago"
+            fallbackId.contains("explore_4") -> "8h ago"
+            else -> "Just now"
+        }
+    }
+    val diffMs = System.currentTimeMillis() - timestamp.toDate().time
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(diffMs)
+    val hours = TimeUnit.MILLISECONDS.toHours(diffMs)
+    val days = TimeUnit.MILLISECONDS.toDays(diffMs)
+
     return when {
         minutes < 1 -> "Just now"
         minutes < 60 -> "${minutes}m ago"
         hours < 24 -> "${hours}h ago"
-        else -> "${days}d ago"
+        days < 7 -> "${days}d ago"
+        else -> "${days / 7}w ago"
     }
 }
