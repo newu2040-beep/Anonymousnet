@@ -229,6 +229,8 @@ fun CreateConfessionScreen(
                 .height(210.dp)
                 .align(Alignment.TopEnd)
         ) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
+            val safeRadius = (size.width * 0.55f).coerceAtLeast(1f)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -237,9 +239,9 @@ fun CreateConfessionScreen(
                         Color.Transparent
                     ),
                     center = Offset(size.width * 0.88f, size.height * 0.22f),
-                    radius = size.width * 0.55f
+                    radius = safeRadius
                 ),
-                radius = size.width * 0.55f,
+                radius = safeRadius,
                 center = Offset(size.width * 0.88f, size.height * 0.22f)
             )
         }

@@ -76,8 +76,10 @@ fun HoodedAnonymousHeroIllustration(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = this.size.width
             val h = this.size.height
+            if (w <= 0f || h <= 0f) return@Canvas
             val center = Offset(w / 2f, h / 2f)
-            val radius = w * 0.45f
+            val radius = (w * 0.45f).coerceAtLeast(1f)
+            val outerRadius = (w * 0.5f).coerceAtLeast(1f)
 
             drawCircle(
                 brush = Brush.radialGradient(
@@ -86,9 +88,9 @@ fun HoodedAnonymousHeroIllustration(
                         primaryColor.copy(alpha = 0.0f)
                     ),
                     center = center,
-                    radius = w * 0.5f
+                    radius = outerRadius
                 ),
-                radius = w * 0.5f,
+                radius = outerRadius,
                 center = center
             )
 

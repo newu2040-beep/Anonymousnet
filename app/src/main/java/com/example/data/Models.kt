@@ -2,9 +2,13 @@ package com.example.data
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
+import java.util.Date
 
+@IgnoreExtraProperties
 data class UserAccount(
     @DocumentId val id: String = "",
     val uid: String = "",
@@ -38,6 +42,7 @@ data class UserAccount(
     )
 }
 
+@IgnoreExtraProperties
 data class PublicProfile(
     @DocumentId val id: String = "",
     val uid: String = "",
@@ -93,6 +98,7 @@ sealed interface UsernameAvailability {
     data class IsCurrentUser(val handle: String) : UsernameAvailability
 }
 
+@IgnoreExtraProperties
 data class ConfessionPost(
     @DocumentId val id: String = "",
     val authorUid: String = "",
@@ -143,6 +149,7 @@ data class ConfessionPost(
     }
 }
 
+@IgnoreExtraProperties
 data class PostComment(
     @DocumentId val id: String = "",
     val postId: String = "",
@@ -164,6 +171,7 @@ data class PostComment(
     )
 }
 
+@IgnoreExtraProperties
 data class SavedOrLikedPostRef(
     @DocumentId val id: String = "",
     val userId: String = "",
@@ -190,6 +198,7 @@ data class SavedOrLikedPostRef(
     }
 }
 
+@IgnoreExtraProperties
 data class FollowRef(
     @DocumentId val id: String = "",
     val followerUid: String = "",
@@ -207,6 +216,7 @@ data class FollowRef(
     )
 }
 
+@IgnoreExtraProperties
 data class Conversation(
     @DocumentId val id: String = "",
     val participantUids: List<String> = emptyList(),
@@ -234,6 +244,7 @@ data class Conversation(
     )
 }
 
+@IgnoreExtraProperties
 data class DirectMessage(
     @DocumentId val id: String = "",
     val conversationId: String = "",
@@ -258,6 +269,7 @@ data class DirectMessage(
     }
 }
 
+@IgnoreExtraProperties
 data class ContentReport(
     @DocumentId val id: String = "",
     val reporterUid: String = "",
@@ -281,6 +293,7 @@ data class ContentReport(
     )
 }
 
+@IgnoreExtraProperties
 data class BlockedUserRef(
     @DocumentId val id: String = "",
     val userId: String = "",
@@ -298,6 +311,7 @@ data class BlockedUserRef(
     )
 }
 
+@IgnoreExtraProperties
 data class UserNotification(
     @DocumentId val id: String = "",
     val userId: String = "",
@@ -321,5 +335,278 @@ data class UserNotification(
         )
         if (targetId != null) map["targetId"] = targetId
         return map
+    }
+}
+
+// --- Fault-Tolerant DocumentSnapshot Deserializers (prevents crashes on legacy/mismatched Firestore fields) ---
+
+private fun DocumentSnapshot.str(key: String, default: String = ""): String {
+    val raw = try { get(key) } catch (_: Throwable) { null } ?: return default
+    return when (raw) {
+        is String -> raw
+        is Iterable<*> -> raw.joinToString(",") { it?.toString().orEmpty() }
+        else -> raw.toString()
+    }
+}
+
+private fun DocumentSnapshot.strOrNull(key: String): String? {
+    val raw = try { get(key) } catch (_: Throwable) { null } ?: return null
+    return when (raw) {
+        is String -> raw
+        is Iterable<*> -> raw.joinToString(",") { it?.toString().orEmpty() }
+        else -> raw.toString()
+    }
+}
+
+private fun DocumentSnapshot.longVal(key: String, default: Long = 0L): Long {
+    val raw = try { get(key) } catch (_: Throwable) { null } ?: return default
+    return when (raw) {
+        is Number -> raw.toLong()
+        is String -> raw.toLongOrNull() ?: default
+        else -> default
+    }
+}
+
+private fun DocumentSnapshot.longOrNull(key: String): Long? {
+    val raw = try { get(key) } catch (_: Throwable) { null } ?: return null
+    return when (raw) {
+        is Number -> raw.toLong()
+        is String -> raw.toLongOrNull()
+        else -> null
+    }
+}
+
+private fun DocumentSnapshot.boolVal(key: String, default: Boolean = false): Boolean {
+    val raw = try { get(key) } catch (_: Throwable) { null } ?: return default
+    return when (raw) {
+        is Boolean -> raw
+        is String -> raw.equals("true", ignoreCase = true)
+        is Number -> raw.toInt() != 0
+        else -> default
+    }
+}
+
+private fun DocumentSnapshot.tsOrNull(key: String): Timestamp? {
+    return try {
+        getTimestamp(key, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+    } catch (_: Throwable) {
+        val raw = try { get(key) } catch (_: Throwable) { null }
+        when (raw) {
+            is Timestamp -> raw
+            is Date -> Timestamp(raw)
+            is Number -> Timestamp(Date(raw.toLong()))
+            else -> null
+        }
+    }
+}
+
+fun DocumentSnapshot.toUserAccountSafe(): UserAccount? {
+    if (!exists()) return null
+    return try {
+        UserAccount(
+            id = id,
+            uid = str("uid", id),
+            anonymousHandle = str("anonymousHandle", "@anon_user"),
+            guest = boolVal("guest", false),
+            themeMode = str("themeMode", "light"),
+            colorTheme = str("colorTheme", "custom_accent"),
+            fontFamily = str("fontFamily", "plus_jakarta_sans"),
+            useSystemFont = boolVal("useSystemFont", false),
+            compactMode = boolVal("compactMode", false),
+            keepAnonymousDefault = boolVal("keepAnonymousDefault", true),
+            notificationsEnabled = boolVal("notificationsEnabled", true),
+            safetyGuidelinesAccepted = boolVal("safetyGuidelinesAccepted", true),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toPublicProfileSafe(): PublicProfile? {
+    if (!exists()) return null
+    return try {
+        PublicProfile(
+            id = id,
+            uid = str("uid", id),
+            displayName = str("displayName", "Anonymousnet"),
+            surname = str("surname", ""),
+            anonymousHandle = str("anonymousHandle", "@anon_user"),
+            gender = str("gender", ""),
+            age = longVal("age", 0L).toInt().coerceIn(0, 120),
+            interests = str("interests", ""),
+            avatarKey = str("avatarKey", "hat_glasses"),
+            avatarUri = str("avatarUri", ""),
+            postCount = longVal("postCount", 0L),
+            viewCount = longVal("viewCount", 0L),
+            likeCount = longVal("likeCount", 0L),
+            followersCount = longVal("followersCount", 0L),
+            followingCount = longVal("followingCount", 0L),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toConfessionPostSafe(): ConfessionPost? {
+    if (!exists()) return null
+    return try {
+        ConfessionPost(
+            id = id,
+            authorUid = str("authorUid", ""),
+            anonymousLabel = str("anonymousLabel", "Anonymous"),
+            anonymousHandle = str("anonymousHandle", "@anon_user"),
+            authorAvatarUri = strOrNull("authorAvatarUri"),
+            isAnonymous = boolVal("isAnonymous", true),
+            type = str("type", "text"),
+            category = str("category", "General").ifBlank { "General" },
+            text = str("text", ""),
+            mediaUri = strOrNull("mediaUri"),
+            mediaCaption = strOrNull("mediaCaption"),
+            mediaDurationSec = longOrNull("mediaDurationSec"),
+            mediaMimeType = strOrNull("mediaMimeType"),
+            topics = strOrNull("topics"),
+            contentWarning = strOrNull("contentWarning"),
+            status = str("status", "published"),
+            likeCount = longVal("likeCount", 0L),
+            commentCount = longVal("commentCount", 0L),
+            viewCount = longVal("viewCount", 0L),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toPostCommentSafe(): PostComment? {
+    if (!exists()) return null
+    return try {
+        PostComment(
+            id = id,
+            postId = str("postId", ""),
+            authorUid = str("authorUid", ""),
+            anonymousLabel = str("anonymousLabel", "Anonymous"),
+            text = str("text", ""),
+            status = str("status", "published"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toSavedOrLikedPostRefSafe(): SavedOrLikedPostRef? {
+    if (!exists()) return null
+    return try {
+        SavedOrLikedPostRef(
+            id = id,
+            userId = str("userId", ""),
+            postId = str("postId", id),
+            postText = str("postText", ""),
+            postType = str("postType", "text"),
+            postMediaUri = strOrNull("postMediaUri"),
+            anonymousLabel = str("anonymousLabel", "Anonymous"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toFollowRefSafe(): FollowRef? {
+    if (!exists()) return null
+    return try {
+        FollowRef(
+            id = id,
+            followerUid = str("followerUid", ""),
+            targetUid = str("targetUid", id),
+            targetHandle = str("targetHandle", "@anon_user"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toConversationSafe(): Conversation? {
+    if (!exists()) return null
+    return try {
+        val rawParticipants = try { get("participantUids") } catch (_: Throwable) { null }
+        val participants = (rawParticipants as? Iterable<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+        Conversation(
+            id = id,
+            participantUids = participants,
+            initiatorUid = str("initiatorUid", ""),
+            recipientUid = str("recipientUid", ""),
+            status = str("status", "pending"),
+            lastMessageText = str("lastMessageText", ""),
+            lastMessageSenderUid = str("lastMessageSenderUid", ""),
+            initiatorHandle = str("initiatorHandle", "@anon_user"),
+            recipientHandle = str("recipientHandle", "@anon_user"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toDirectMessageSafe(): DirectMessage? {
+    if (!exists()) return null
+    return try {
+        DirectMessage(
+            id = id,
+            conversationId = str("conversationId", ""),
+            senderUid = str("senderUid", ""),
+            recipientUid = str("recipientUid", ""),
+            text = str("text", ""),
+            mediaUri = strOrNull("mediaUri"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toBlockedUserRefSafe(): BlockedUserRef? {
+    if (!exists()) return null
+    return try {
+        BlockedUserRef(
+            id = id,
+            userId = str("userId", ""),
+            blockedUid = str("blockedUid", id),
+            blockedLabel = str("blockedLabel", "Anonymous"),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+fun DocumentSnapshot.toUserNotificationSafe(): UserNotification? {
+    if (!exists()) return null
+    return try {
+        UserNotification(
+            id = id,
+            userId = str("userId", ""),
+            type = str("type", "activity"),
+            title = str("title", ""),
+            body = str("body", ""),
+            targetId = strOrNull("targetId"),
+            isRead = boolVal("isRead", false),
+            createdAt = tsOrNull("createdAt"),
+            updatedAt = tsOrNull("updatedAt")
+        )
+    } catch (_: Throwable) {
+        null
     }
 }

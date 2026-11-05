@@ -84,9 +84,20 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Co
 import com.google.firebase.Firebase
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
+import android.content.ContextWrapper
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+
+/**
+ * Unwraps any ContextWrapper chain to find the underlying Activity instance required by CredentialManager.
+ */
+tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 /**
  * Silent Auto-Sign-In on App Startup via CredentialManager (GetGoogleIdOption).
@@ -98,30 +109,43 @@ fun attemptAutoSignIn(
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    if (Firebase.auth.currentUser != null) {
+    val currentUser = try {
+        Firebase.auth.currentUser
+    } catch (_: Throwable) {
+        null
+    }
+    if (currentUser != null) {
         onAuthSuccess()
         return
     }
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
+        context.getString(R.string.default_web_client_id).trim()
+    } catch (_: Throwable) {
+        ""
+    }
+    if (clientId.isEmpty()) {
         onUnauthenticated()
         return
     }
 
-    val googleIdOption = GetGoogleIdOption.Builder()
-        .setFilterByAuthorizedAccounts(true)
-        .setServerClientId(clientId)
-        .setAutoSelectEnabled(true)
-        .build()
-
-    val request = GetCredentialRequest.Builder()
-        .addCredentialOption(googleIdOption)
-        .build()
+    val activityContext = context.findActivity() ?: run {
+        onUnauthenticated()
+        return
+    }
 
     scope.launch {
         try {
-            val result = credentialManager.getCredential(context, request)
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(true)
+                .setServerClientId(clientId)
+                .setAutoSelectEnabled(true)
+                .build()
+
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build()
+
+            val result = credentialManager.getCredential(activityContext, request)
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                 val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
@@ -131,7 +155,7 @@ fun attemptAutoSignIn(
             } else {
                 onUnauthenticated()
             }
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             onUnauthenticated()
         }
     }
@@ -149,20 +173,24 @@ fun onGoogleSignInClicked(
     onAuthCancelled: () -> Unit = {}
 ) {
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
+        context.getString(R.string.default_web_client_id).trim()
+    } catch (_: Throwable) {
+        ""
+    }
+    if (clientId.isEmpty()) {
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
         return
     }
 
-    val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
-    val request = GetCredentialRequest.Builder()
-        .addCredentialOption(signInOption)
-        .build()
+    val activityContext = context.findActivity() ?: context
 
     scope.launch {
         try {
-            val activityContext = context as? Activity ?: context
+            val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(signInOption)
+                .build()
+
             val result = credentialManager.getCredential(activityContext, request)
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -176,7 +204,7 @@ fun onGoogleSignInClicked(
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Google Sign-In cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("Auth", "Google Sign-In failed", e)
             onAuthError(e.localizedMessage ?: "Sign in failed. Please try again.")
         }
@@ -191,11 +219,15 @@ fun signOutUser(
     onSignOutComplete: () -> Unit,
     scope: CoroutineScope
 ) {
-    Firebase.auth.signOut()
+    try {
+        Firebase.auth.signOut()
+    } catch (e: Throwable) {
+        Log.e("Auth", "Firebase signOut failed", e)
+    }
     scope.launch {
         try {
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("Auth", "Failed to clear credential state", e)
         } finally {
             onSignOutComplete()
@@ -214,7 +246,7 @@ fun WelcomeAuthScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) { CredentialManager.create(context.applicationContext ?: context) }
 
     var isLoadingGoogle by remember { mutableStateOf(false) }
     var isLoadingAnonymous by remember { mutableStateOf(false) }
@@ -223,6 +255,7 @@ fun WelcomeAuthScreen(
     var showTermsDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        delay(300L)
         attemptAutoSignIn(
             context = context,
             credentialManager = credentialManager,
@@ -243,6 +276,7 @@ fun WelcomeAuthScreen(
                 .height(110.dp)
                 .align(Alignment.BottomCenter)
         ) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
             val w = size.width
             val h = size.height
             val wavePath = Path().apply {

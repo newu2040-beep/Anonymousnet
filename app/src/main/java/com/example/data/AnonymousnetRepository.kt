@@ -4,10 +4,8 @@ import android.util.Log
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.auth
-import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -28,53 +26,60 @@ class AnonymousnetRepository(
         operationType: OperationType,
         path: String?
     ) {
-        val currentUser = try {
-            auth.currentUser
-        } catch (_: Exception) {
-            null
-        }
-        val providerInfo = JSONArray().apply {
-            currentUser?.providerData?.forEach { profile ->
+        try {
+            val currentUser = try {
+                auth.currentUser
+            } catch (_: Throwable) {
+                null
+            }
+            val providerInfo = JSONArray().apply {
+                currentUser?.providerData?.forEach { profile ->
+                    put(
+                        JSONObject().apply {
+                            put("providerId", profile.providerId)
+                            put("displayName", profile.displayName)
+                            put("email", profile.email)
+                            put("photoUrl", profile.photoUrl?.toString())
+                        }
+                    )
+                }
+            }
+
+            val authInfo = JSONObject().apply {
+                put("userId", currentUser?.uid)
+                put("email", currentUser?.email)
+                put("emailVerified", currentUser?.isEmailVerified)
+                put("isAnonymous", currentUser?.isAnonymous)
                 put(
-                    JSONObject().apply {
-                        put("providerId", profile.providerId)
-                        put("displayName", profile.displayName)
-                        put("email", profile.email)
-                        put("photoUrl", profile.photoUrl?.toString())
+                    "tenantId",
+                    try {
+                        currentUser?.tenantId
+                    } catch (_: Throwable) {
+                        null
                     }
                 )
+                put("providerInfo", providerInfo)
             }
-        }
 
-        val authInfo = JSONObject().apply {
-            put("userId", currentUser?.uid)
-            put("email", currentUser?.email)
-            put("emailVerified", currentUser?.isEmailVerified)
-            put("isAnonymous", currentUser?.isAnonymous)
-            put(
-                "tenantId",
-                try {
-                    currentUser?.tenantId
-                } catch (_: Throwable) {
-                    null
-                }
-            )
-            put("providerInfo", providerInfo)
-        }
+            val errInfo = JSONObject().apply {
+                put("error", error.message ?: error.toString())
+                put("operationType", operationType.value)
+                put("path", path)
+                put("authInfo", authInfo)
+            }
 
-        val errInfo = JSONObject().apply {
-            put("error", error.message ?: error.toString())
-            put("operationType", operationType.name.lowercase())
-            put("path", path)
-            put("authInfo", authInfo)
+            Log.e("FirestoreError", errInfo.toString(), error)
+        } catch (_: Throwable) {
+            Log.e("FirestoreError", "Firestore error on $path: ${error.message}", error)
         }
-
-        Log.e("FirestoreError", errInfo.toString(), error)
     }
 
     private fun requireUserId(): String {
-        return auth.currentUser?.uid
-            ?: throw IllegalStateException("User must be signed in to perform Firestore operations.")
+        return try {
+            auth.currentUser?.uid
+        } catch (_: Throwable) {
+            null
+        } ?: throw IllegalStateException("User must be signed in to perform Firestore operations.")
     }
 
     // --- 1. User Account & Public Profile Initialization ---
@@ -83,10 +88,11 @@ class AnonymousnetRepository(
         guestMode: Boolean = false,
         preferredHandle: String = "@anon_user"
     ): Result<Unit> {
-        val uid = requireUserId()
-        val userRef = db.collection("users").document(uid)
-        val profileRef = db.collection("publicProfiles").document(uid)
         return try {
+            val uid = requireUserId()
+            val userRef = db.collection("users").document(uid)
+            val profileRef = db.collection("publicProfiles").document(uid)
+
             val userSnap = userRef.get().await()
             val profileSnap = profileRef.get().await()
 
@@ -141,7 +147,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, "users/$uid")
+            handleFirestoreError(e, OperationType.WRITE, "users")
             Result.failure(e)
         }
     }
@@ -151,7 +157,7 @@ class AnonymousnetRepository(
         return db.collection("users").document(userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObject(UserAccount::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.toUserAccountSafe()
             }
             .catch { error ->
                 if (error is Exception) handleFirestoreError(error, OperationType.GET, path)
@@ -164,7 +170,7 @@ class AnonymousnetRepository(
         return db.collection("publicProfiles").document(userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObject(PublicProfile::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.toPublicProfileSafe()
             }
             .catch { error ->
                 if (error is Exception) handleFirestoreError(error, OperationType.GET, path)
@@ -182,9 +188,9 @@ class AnonymousnetRepository(
         notificationsEnabled: Boolean? = null,
         guest: Boolean? = null
     ): Result<Unit> {
-        val uid = requireUserId()
-        val userRef = db.collection("users").document(uid)
         return try {
+            val uid = requireUserId()
+            val userRef = db.collection("users").document(uid)
             val snap = userRef.get().await()
             if (!snap.exists()) {
                 ensureUserAndPublicProfile()
@@ -206,7 +212,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, userRef.path)
+            handleFirestoreError(e, OperationType.UPDATE, "users")
             Result.failure(e)
         }
     }
@@ -221,18 +227,18 @@ class AnonymousnetRepository(
     }
 
     suspend fun checkUsernameAvailability(rawHandle: String): Result<UsernameAvailability> {
-        val uid = requireUserId()
-        val normalized = normalizeHandle(rawHandle)
-        if (normalized.isEmpty()) {
-            return Result.success(UsernameAvailability.Empty)
-        }
-        if (normalized.length < 3) {
-            return Result.success(
-                UsernameAvailability.InvalidFormat("Username must be at least 3 characters (letters, numbers, or _).")
-            )
-        }
-        val formattedHandle = "@$normalized"
         return try {
+            val uid = requireUserId()
+            val normalized = normalizeHandle(rawHandle)
+            if (normalized.isEmpty()) {
+                return Result.success(UsernameAvailability.Empty)
+            }
+            if (normalized.length < 3) {
+                return Result.success(
+                    UsernameAvailability.InvalidFormat("Username must be at least 3 characters (letters, numbers, or _).")
+                )
+            }
+            val formattedHandle = "@$normalized"
             val existingSnap = db.collection("publicProfiles")
                 .whereEqualTo("anonymousHandle", formattedHandle)
                 .get()
@@ -264,23 +270,23 @@ class AnonymousnetRepository(
         newInterests: String = "",
         newAvatarUri: String = ""
     ): Result<Unit> {
-        val uid = requireUserId()
-        val normalized = normalizeHandle(rawHandle)
-        if (normalized.length < 3) {
-            return Result.failure(IllegalArgumentException("Username must be at least 3 characters."))
-        }
-        val formattedHandle = "@$normalized"
-        val cleanDisplayName = newDisplayName.trim().take(60).ifEmpty { "Anonymousnet" }
-        val cleanSurname = newSurname.trim().take(60)
-        val cleanGender = if (newGender in listOf("Male", "Female")) newGender else ""
-        val cleanAge = newAge.coerceIn(0, 120)
-        val cleanInterests = newInterests.trim().take(500)
-        val cleanAvatarUri = newAvatarUri.trim().take(2048)
-
-        val userRef = db.collection("users").document(uid)
-        val profileRef = db.collection("publicProfiles").document(uid)
-
         return try {
+            val uid = requireUserId()
+            val normalized = normalizeHandle(rawHandle)
+            if (normalized.length < 3) {
+                return Result.failure(IllegalArgumentException("Username must be at least 3 characters."))
+            }
+            val formattedHandle = "@$normalized"
+            val cleanDisplayName = newDisplayName.trim().take(60).ifEmpty { "Anonymousnet" }
+            val cleanSurname = newSurname.trim().take(60)
+            val cleanGender = if (newGender in listOf("Male", "Female")) newGender else ""
+            val cleanAge = newAge.coerceIn(0, 120)
+            val cleanInterests = newInterests.trim().take(500)
+            val cleanAvatarUri = newAvatarUri.trim().take(2048)
+
+            val userRef = db.collection("users").document(uid)
+            val profileRef = db.collection("publicProfiles").document(uid)
+
             ensureUserAndPublicProfile()
             val availability = checkUsernameAvailability(normalized).getOrThrow()
             if (availability is UsernameAvailability.Taken) {
@@ -317,7 +323,7 @@ class AnonymousnetRepository(
 
             val fullLabel = if (cleanSurname.isNotEmpty()) "$cleanDisplayName $cleanSurname".take(60) else cleanDisplayName
             for (postDoc in myPostsSnap.documents) {
-                val isAnon = postDoc.getBoolean("isAnonymous") ?: true
+                val isAnon = try { postDoc.getBoolean("isAnonymous") ?: true } catch (_: Throwable) { true }
                 val updatedLabel = if (isAnon) "Anonymous" else fullLabel
                 val postUpdates = mutableMapOf<String, Any>(
                     "anonymousHandle" to formattedHandle,
@@ -335,31 +341,36 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, profileRef.path)
+            handleFirestoreError(e, OperationType.UPDATE, "publicProfiles")
             Result.failure(e)
         }
     }
 
     suspend fun updateUsernameAndDisplayName(
-        rawHandle: String,
+        newRawHandle: String,
         newDisplayName: String
     ): Result<Unit> {
-        val uid = requireUserId()
-        val existingProfile = try {
-            db.collection("publicProfiles").document(uid).get().await()
-                .toObject(PublicProfile::class.java)
-        } catch (_: Exception) {
-            null
+        return try {
+            val uid = requireUserId()
+            val existingProfile = try {
+                db.collection("publicProfiles").document(uid).get().await().toPublicProfileSafe()
+            } catch (_: Throwable) {
+                null
+            }
+            updateFullProfile(
+                rawHandle = newRawHandle,
+                newDisplayName = newDisplayName,
+                newSurname = existingProfile?.surname ?: "",
+                newGender = existingProfile?.gender ?: "",
+                newAge = existingProfile?.age ?: 0,
+                newInterests = existingProfile?.interests ?: "",
+                newAvatarUri = existingProfile?.avatarUri ?: ""
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-        return updateFullProfile(
-            rawHandle = rawHandle,
-            newDisplayName = newDisplayName,
-            newSurname = existingProfile?.surname ?: "",
-            newGender = existingProfile?.gender ?: "",
-            newAge = existingProfile?.age ?: 0,
-            newInterests = existingProfile?.interests ?: "",
-            newAvatarUri = existingProfile?.avatarUri ?: ""
-        )
     }
 
     // --- 2. Confession Feed & Creation (No Word Limits) ---
@@ -370,7 +381,7 @@ class AnonymousnetRepository(
             .whereEqualTo("status", "published")
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(ConfessionPost::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toConfessionPostSafe() }
                     .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -385,13 +396,25 @@ class AnonymousnetRepository(
             .whereEqualTo("authorUid", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(ConfessionPost::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toConfessionPostSafe() }
                     .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
                 if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
                 throw error
             }
+    }
+
+    suspend fun getPostById(postId: String): Result<ConfessionPost?> {
+        return try {
+            val snap = db.collection("posts").document(postId).get().await()
+            Result.success(snap.toConfessionPostSafe())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, "posts/$postId")
+            Result.failure(e)
+        }
     }
 
     suspend fun createPost(
@@ -408,14 +431,15 @@ class AnonymousnetRepository(
         mediaMimeType: String? = null,
         topics: String? = null,
         contentWarning: String? = null,
-        status: String = "published"
+        status: String = "published",
+        customDocId: String? = null
     ): Result<String> {
-        val uid = requireUserId()
-        val postId = "post_${UUID.randomUUID().toString().replace("-", "").take(16)}"
-        val postRef = db.collection("posts").document(postId)
-        val profileRef = db.collection("publicProfiles").document(uid)
-
         return try {
+            val uid = requireUserId()
+            val postId = customDocId ?: "post_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val postRef = db.collection("posts").document(postId)
+            val profileRef = db.collection("publicProfiles").document(uid)
+
             ensureUserAndPublicProfile()
             val post = ConfessionPost(
                 id = postId,
@@ -455,21 +479,21 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, postRef.path)
+            handleFirestoreError(e, OperationType.CREATE, "posts")
             Result.failure(e)
         }
     }
 
     suspend fun deletePost(postId: String): Result<Unit> {
-        val uid = requireUserId()
-        val postRef = db.collection("posts").document(postId)
         return try {
+            val uid = requireUserId()
+            val postRef = db.collection("posts").document(postId)
             postRef.delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.DELETE, "posts/$postId (by $uid)")
+            handleFirestoreError(e, OperationType.DELETE, "posts/$postId")
             Result.failure(e)
         }
     }
@@ -482,7 +506,7 @@ class AnonymousnetRepository(
             .whereEqualTo("userId", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(SavedOrLikedPostRef::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toSavedOrLikedPostRefSafe() }
                     .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -497,7 +521,7 @@ class AnonymousnetRepository(
             .whereEqualTo("userId", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(SavedOrLikedPostRef::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toSavedOrLikedPostRefSafe() }
                     .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -507,12 +531,12 @@ class AnonymousnetRepository(
     }
 
     suspend fun toggleLike(post: ConfessionPost, isCurrentlyLiked: Boolean): Result<Unit> {
-        val uid = requireUserId()
-        val userLikedRef = db.collection("users").document(uid).collection("likedPosts").document(post.id)
-        val postRef = db.collection("posts").document(post.id)
-        val authorProfileRef = db.collection("publicProfiles").document(post.authorUid)
-
         return try {
+            val uid = requireUserId()
+            val userLikedRef = db.collection("users").document(uid).collection("likedPosts").document(post.id)
+            val postRef = db.collection("posts").document(post.id)
+            val authorProfileRef = db.collection("publicProfiles").document(post.authorUid)
+
             val batch = db.batch()
             if (isCurrentlyLiked) {
                 batch.delete(userLikedRef)
@@ -544,7 +568,7 @@ class AnonymousnetRepository(
                 )
 
                 // Notify post author if not self
-                if (post.authorUid != uid) {
+                if (post.authorUid != uid && post.authorUid.isNotBlank()) {
                     val notifRef = db.collection("users").document(post.authorUid)
                         .collection("notifications").document("like_${post.id}_${uid.take(8)}")
                     val notif = UserNotification(
@@ -568,22 +592,22 @@ class AnonymousnetRepository(
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 ).await()
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
             }
 
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, userLikedRef.path)
+            handleFirestoreError(e, OperationType.WRITE, "likedPosts")
             Result.failure(e)
         }
     }
 
     suspend fun toggleSave(post: ConfessionPost, isCurrentlySaved: Boolean): Result<Unit> {
-        val uid = requireUserId()
-        val userSavedRef = db.collection("users").document(uid).collection("savedPosts").document(post.id)
         return try {
+            val uid = requireUserId()
+            val userSavedRef = db.collection("users").document(uid).collection("savedPosts").document(post.id)
             if (isCurrentlySaved) {
                 userSavedRef.delete().await()
             } else {
@@ -601,7 +625,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, userSavedRef.path)
+            handleFirestoreError(e, OperationType.WRITE, "savedPosts")
             Result.failure(e)
         }
     }
@@ -612,7 +636,7 @@ class AnonymousnetRepository(
             .whereEqualTo("status", "published")
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(PostComment::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toPostCommentSafe() }
                     .sortedBy { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -626,11 +650,12 @@ class AnonymousnetRepository(
         text: String,
         anonymousLabel: String = "Anonymous"
     ): Result<String> {
-        val uid = requireUserId()
-        val commentId = "cmt_${UUID.randomUUID().toString().replace("-", "").take(16)}"
-        val postRef = db.collection("posts").document(post.id)
-        val commentRef = postRef.collection("comments").document(commentId)
         return try {
+            val uid = requireUserId()
+            val commentId = "cmt_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val postRef = db.collection("posts").document(post.id)
+            val commentRef = postRef.collection("comments").document(commentId)
+
             val comment = PostComment(
                 id = commentId,
                 postId = post.id,
@@ -650,7 +675,7 @@ class AnonymousnetRepository(
             )
 
             // Notify post author if not self
-            if (post.authorUid != uid) {
+            if (post.authorUid != uid && post.authorUid.isNotBlank()) {
                 val notifRef = db.collection("users").document(post.authorUid).collection("notifications").document("cmt_${commentId.take(12)}")
                 val notif = UserNotification(
                     userId = post.authorUid,
@@ -668,16 +693,16 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, commentRef.path)
+            handleFirestoreError(e, OperationType.CREATE, "comments")
             Result.failure(e)
         }
     }
 
     suspend fun deleteComment(post: ConfessionPost, commentId: String): Result<Unit> {
-        requireUserId()
-        val postRef = db.collection("posts").document(post.id)
-        val commentRef = postRef.collection("comments").document(commentId)
         return try {
+            requireUserId()
+            val postRef = db.collection("posts").document(post.id)
+            val commentRef = postRef.collection("comments").document(commentId)
             val batch = db.batch()
             batch.delete(commentRef)
             batch.update(
@@ -692,15 +717,15 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.DELETE, commentRef.path)
+            handleFirestoreError(e, OperationType.DELETE, "comments")
             Result.failure(e)
         }
     }
 
     suspend fun incrementPostView(post: ConfessionPost): Result<Unit> {
-        requireUserId()
-        val postRef = db.collection("posts").document(post.id)
         return try {
+            requireUserId()
+            val postRef = db.collection("posts").document(post.id)
             postRef.update(
                 mapOf(
                     "viewCount" to (post.viewCount + 1L),
@@ -711,7 +736,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, postRef.path)
+            handleFirestoreError(e, OperationType.UPDATE, "posts")
             Result.failure(e)
         }
     }
@@ -724,7 +749,7 @@ class AnonymousnetRepository(
             .whereEqualTo("followerUid", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(FollowRef::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toFollowRefSafe() }
             }
             .catch { error ->
                 if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
@@ -733,14 +758,14 @@ class AnonymousnetRepository(
     }
 
     suspend fun toggleFollow(targetUid: String, targetHandle: String, isCurrentlyFollowing: Boolean): Result<Unit> {
-        val uid = requireUserId()
-        if (targetUid == uid) return Result.failure(IllegalArgumentException("Cannot follow self"))
-
-        val followRef = db.collection("users").document(uid).collection("following").document(targetUid)
-        val myProfileRef = db.collection("publicProfiles").document(uid)
-        val targetProfileRef = db.collection("publicProfiles").document(targetUid)
-
         return try {
+            val uid = requireUserId()
+            if (targetUid == uid) return Result.failure(IllegalArgumentException("Cannot follow self"))
+
+            val followRef = db.collection("users").document(uid).collection("following").document(targetUid)
+            val myProfileRef = db.collection("publicProfiles").document(uid)
+            val targetProfileRef = db.collection("publicProfiles").document(targetUid)
+
             ensureUserAndPublicProfile()
             if (isCurrentlyFollowing) {
                 followRef.delete().await()
@@ -751,7 +776,7 @@ class AnonymousnetRepository(
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
                     ).await()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
                 try {
                     targetProfileRef.update(
                         mapOf(
@@ -759,7 +784,7 @@ class AnonymousnetRepository(
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
                     ).await()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
             } else {
                 val follow = FollowRef(
                     followerUid = uid,
@@ -774,7 +799,7 @@ class AnonymousnetRepository(
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
                     ).await()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
                 try {
                     targetProfileRef.update(
                         mapOf(
@@ -782,7 +807,7 @@ class AnonymousnetRepository(
                             "updatedAt" to FieldValue.serverTimestamp()
                         )
                     ).await()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
 
                 try {
                     val notifRef = db.collection("users").document(targetUid).collection("notifications").document("follow_${uid.take(12)}")
@@ -795,13 +820,13 @@ class AnonymousnetRepository(
                         isRead = false
                     )
                     notifRef.set(notif.toCreateMap()).await()
-                } catch (_: Exception) {}
+                } catch (_: Throwable) {}
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, followRef.path)
+            handleFirestoreError(e, OperationType.WRITE, "following")
             Result.failure(e)
         }
     }
@@ -814,7 +839,7 @@ class AnonymousnetRepository(
             .whereArrayContains("participantUids", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(Conversation::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toConversationSafe() }
                     .sortedByDescending { it.updatedAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -828,7 +853,7 @@ class AnonymousnetRepository(
         return db.collection("conversations").document(conversationId).collection("messages")
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(DirectMessage::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toDirectMessageSafe() }
                     .sortedBy { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -843,21 +868,21 @@ class AnonymousnetRepository(
         initialText: String,
         mediaUri: String? = null
     ): Result<String> {
-        val uid = requireUserId()
-        if (recipientUid == uid) return Result.failure(IllegalArgumentException("Cannot message self"))
-
-        val conversationId = if (uid < recipientUid) "conv_${uid.take(8)}_${recipientUid.take(8)}" else "conv_${recipientUid.take(8)}_${uid.take(8)}"
-        val convRef = db.collection("conversations").document(conversationId)
-
         return try {
+            val uid = requireUserId()
+            if (recipientUid == uid) return Result.failure(IllegalArgumentException("Cannot message self"))
+
+            val conversationId = if (uid < recipientUid) "conv_${uid.take(8)}_${recipientUid.take(8)}" else "conv_${recipientUid.take(8)}_${uid.take(8)}"
+            val convRef = db.collection("conversations").document(conversationId)
+
             val myProfile = db.collection("publicProfiles").document(uid).get().await()
-            val senderHandle = myProfile.getString("anonymousHandle") ?: "@anon_user"
+            val senderHandle = try { myProfile.getString("anonymousHandle") } catch (_: Throwable) { null } ?: "@anon_user"
 
             val existing = convRef.get().await()
             val batch = db.batch()
 
             val status = if (existing.exists()) {
-                existing.getString("status") ?: "pending"
+                try { existing.getString("status") } catch (_: Throwable) { null } ?: "pending"
             } else {
                 "pending"
             }
@@ -908,15 +933,15 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.WRITE, convRef.path)
+            handleFirestoreError(e, OperationType.WRITE, "conversations")
             Result.failure(e)
         }
     }
 
     suspend fun respondToMessageRequest(conversationId: String, accept: Boolean, block: Boolean = false): Result<Unit> {
-        val uid = requireUserId()
-        val convRef = db.collection("conversations").document(conversationId)
         return try {
+            val uid = requireUserId()
+            val convRef = db.collection("conversations").document(conversationId)
             val nextStatus = when {
                 block -> "blocked"
                 accept -> "accepted"
@@ -930,7 +955,7 @@ class AnonymousnetRepository(
             ).await()
 
             if (block) {
-                val conv = convRef.get().await().toObject(Conversation::class.java)
+                val conv = convRef.get().await().toConversationSafe()
                 val targetUid = conv?.participantUids?.firstOrNull { it != uid }
                 if (targetUid != null) {
                     blockAuthor(targetUid, "Anonymous User")
@@ -940,7 +965,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, convRef.path)
+            handleFirestoreError(e, OperationType.UPDATE, "conversations/$conversationId")
             Result.failure(e)
         }
     }
@@ -951,13 +976,13 @@ class AnonymousnetRepository(
         text: String,
         mediaUri: String? = null
     ): Result<String> {
-        val uid = requireUserId()
-        val convRef = db.collection("conversations").document(conversationId)
-        val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").take(16)}"
-        val msgRef = convRef.collection("messages").document(messageId)
-
         return try {
-            val conv = convRef.get().await().toObject(Conversation::class.java)
+            val uid = requireUserId()
+            val convRef = db.collection("conversations").document(conversationId)
+            val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val msgRef = convRef.collection("messages").document(messageId)
+
+            val conv = convRef.get().await().toConversationSafe()
             if (conv?.status != "accepted") {
                 return Result.failure(IllegalStateException("Cannot send message until conversation request is accepted."))
             }
@@ -997,7 +1022,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, msgRef.path)
+            handleFirestoreError(e, OperationType.CREATE, "messages")
             Result.failure(e)
         }
     }
@@ -1010,10 +1035,10 @@ class AnonymousnetRepository(
         reason: String,
         details: String
     ): Result<String> {
-        val uid = requireUserId()
-        val reportId = "rep_${UUID.randomUUID().toString().replace("-", "").take(16)}"
-        val reportRef = db.collection("reports").document(reportId)
         return try {
+            val uid = requireUserId()
+            val reportId = "rep_${UUID.randomUUID().toString().replace("-", "").take(16)}"
+            val reportRef = db.collection("reports").document(reportId)
             val report = ContentReport(
                 id = reportId,
                 reporterUid = uid,
@@ -1028,7 +1053,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, reportRef.path)
+            handleFirestoreError(e, OperationType.CREATE, "reports")
             Result.failure(e)
         }
     }
@@ -1039,7 +1064,7 @@ class AnonymousnetRepository(
             .whereEqualTo("userId", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(BlockedUserRef::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toBlockedUserRefSafe() }
             }
             .catch { error ->
                 if (error is Exception) handleFirestoreError(error, OperationType.LIST, path)
@@ -1048,10 +1073,10 @@ class AnonymousnetRepository(
     }
 
     suspend fun blockAuthor(blockedUid: String, blockedLabel: String = "Anonymous"): Result<Unit> {
-        val uid = requireUserId()
-        val safeBlockedId = blockedUid.replace("[^a-zA-Z0-9_\\-]".toRegex(), "_").take(120).ifEmpty { "anon_blocked" }
-        val blockRef = db.collection("users").document(uid).collection("blocks").document(safeBlockedId)
         return try {
+            val uid = requireUserId()
+            val safeBlockedId = blockedUid.replace("[^a-zA-Z0-9_\\-]".toRegex(), "_").take(120).ifEmpty { "anon_blocked" }
+            val blockRef = db.collection("users").document(uid).collection("blocks").document(safeBlockedId)
             val ref = BlockedUserRef(
                 userId = uid,
                 blockedUid = safeBlockedId,
@@ -1062,21 +1087,21 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.CREATE, blockRef.path)
+            handleFirestoreError(e, OperationType.CREATE, "blocks")
             Result.failure(e)
         }
     }
 
     suspend fun unblockAuthor(blockedUid: String): Result<Unit> {
-        val uid = requireUserId()
-        val blockRef = db.collection("users").document(uid).collection("blocks").document(blockedUid)
         return try {
+            val uid = requireUserId()
+            val blockRef = db.collection("users").document(uid).collection("blocks").document(blockedUid)
             blockRef.delete().await()
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.DELETE, blockRef.path)
+            handleFirestoreError(e, OperationType.DELETE, "blocks/$blockedUid")
             Result.failure(e)
         }
     }
@@ -1087,7 +1112,7 @@ class AnonymousnetRepository(
             .whereEqualTo("userId", userId)
             .snapshots()
             .map { snapshot ->
-                snapshot.toObjects(UserNotification::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                snapshot.documents.mapNotNull { it.toUserNotificationSafe() }
                     .sortedByDescending { it.createdAt ?: Timestamp(0, 0) }
             }
             .catch { error ->
@@ -1097,9 +1122,9 @@ class AnonymousnetRepository(
     }
 
     suspend fun markNotificationRead(notificationId: String): Result<Unit> {
-        val uid = requireUserId()
-        val notifRef = db.collection("users").document(uid).collection("notifications").document(notificationId)
         return try {
+            val uid = requireUserId()
+            val notifRef = db.collection("users").document(uid).collection("notifications").document(notificationId)
             notifRef.update(
                 mapOf(
                     "isRead" to true,
@@ -1110,22 +1135,19 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.UPDATE, notifRef.path)
+            handleFirestoreError(e, OperationType.UPDATE, "notifications/$notificationId")
             Result.failure(e)
         }
     }
 
+    // --- 7. Account Deletion ---
+
     suspend fun deleteAccountAndData(): Result<Unit> {
-        val uid = requireUserId()
         return try {
-            val myPosts = db.collection("posts")
-                .whereEqualTo("authorUid", uid)
-                .get()
-                .await()
+            val uid = requireUserId()
             val batch = db.batch()
-            for (doc in myPosts.documents) {
-                batch.delete(doc.reference)
-            }
+            val myPosts = db.collection("posts").whereEqualTo("authorUid", uid).get().await()
+            myPosts.documents.forEach { batch.delete(it.reference) }
             batch.delete(db.collection("publicProfiles").document(uid))
             batch.delete(db.collection("users").document(uid))
             batch.commit().await()
@@ -1133,7 +1155,7 @@ class AnonymousnetRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            handleFirestoreError(e, OperationType.DELETE, "users/$uid")
+            handleFirestoreError(e, OperationType.DELETE, "users")
             Result.failure(e)
         }
     }

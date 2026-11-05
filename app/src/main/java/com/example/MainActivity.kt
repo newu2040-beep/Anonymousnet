@@ -74,6 +74,10 @@ import kotlinx.coroutines.flow.callbackFlow
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            com.google.firebase.FirebaseApp.initializeApp(this)
+        } catch (_: Throwable) {
+        }
         enableEdgeToEdge()
         PushNotificationHelper.ensureNotificationChannel(this)
         setContent {
@@ -86,8 +90,17 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     val listener = FirebaseAuth.AuthStateListener { auth ->
         trySend(auth.currentUser)
     }
-    addAuthStateListener(listener)
-    awaitClose { removeAuthStateListener(listener) }
+    try {
+        addAuthStateListener(listener)
+    } catch (_: Throwable) {
+        trySend(null)
+    }
+    awaitClose {
+        try {
+            removeAuthStateListener(listener)
+        } catch (_: Throwable) {
+        }
+    }
 }
 
 @Composable
@@ -112,21 +125,21 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
         PushNotificationHelper.ensureNotificationChannel(context)
     }
 
-    LaunchedEffect(Unit) {
-        if (!requestedInitialPermissions) {
+    val user = currentUser
+
+    // Request notification permission only after authentication so it never collides with CredentialManager on cold start
+    LaunchedEffect(user?.uid) {
+        if (user != null && !requestedInitialPermissions) {
             requestedInitialPermissions = true
-            val permissionsToRequest = mutableListOf(
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.CAMERA
-            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+                try {
+                    initialPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                } catch (_: Throwable) {
+                }
             }
-            initialPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
 
-    val user = currentUser
     if (user == null) {
         // Screen 1 — Welcome and Authentication
         AnonymousnetTheme(
@@ -144,12 +157,13 @@ fun AnonymousnetAppRoot(auth: FirebaseAuth = Firebase.auth) {
             )
         }
     } else {
+        val appContext = context.applicationContext ?: context
         // Authenticated session: Initialize ViewModel keyed by user.uid with custom Firestore database ID
         val viewModel: AnonymousnetViewModel = viewModel(
             key = user.uid,
             factory = viewModelFactory {
                 initializer {
-                    val app = checkNotNull(this[APPLICATION_KEY])
+                    val app = this[APPLICATION_KEY] ?: appContext
                     val databaseId = app.getString(R.string.firestore_database_id)
                     val db = FirebaseFirestore.getInstance(databaseId)
                     AnonymousnetViewModel(

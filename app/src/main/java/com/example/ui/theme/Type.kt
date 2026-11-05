@@ -8,38 +8,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val InterFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.inter))
-} catch (_: Throwable) {
-    FontFamily.Default
-}
-
-val RobotoFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.roboto))
-} catch (_: Throwable) {
-    FontFamily.Default
-}
-
-val PoppinsFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.poppins))
-} catch (_: Throwable) {
-    FontFamily.Default
-}
-
-val ManropeFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.manrope))
-} catch (_: Throwable) {
-    FontFamily.Default
-}
-
-val NunitoSansFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.nunito_sans))
-} catch (_: Throwable) {
-    FontFamily.Default
-}
-
-val PlusJakartaSansFontFamily: FontFamily = try {
-    FontFamily(Font(R.font.plus_jakarta_sans))
+private fun safeResourceFontFamily(resId: Int): FontFamily = try {
+    FontFamily(
+        Font(resId, FontWeight.Normal),
+        Font(resId, FontWeight.Medium),
+        Font(resId, FontWeight.SemiBold),
+        Font(resId, FontWeight.Bold)
+    )
 } catch (_: Throwable) {
     FontFamily.Default
 }
@@ -47,15 +22,23 @@ val PlusJakartaSansFontFamily: FontFamily = try {
 enum class AppFontOption(
     val key: String,
     val displayName: String,
-    val fontFamily: FontFamily
+    private val fontResId: Int?
 ) {
-    PLUS_JAKARTA_SANS("plus_jakarta_sans", "Plus Jakarta", PlusJakartaSansFontFamily),
-    INTER("inter", "Inter", InterFontFamily),
-    ROBOTO("roboto", "Roboto", RobotoFontFamily),
-    POPPINS("poppins", "Poppins", PoppinsFontFamily),
-    MANROPE("manrope", "Manrope", ManropeFontFamily),
-    NUNITO_SANS("nunito_sans", "Nunito Sans", NunitoSansFontFamily),
-    SYSTEM_DEFAULT("system_default", "System Default", FontFamily.Default);
+    PLUS_JAKARTA_SANS("plus_jakarta_sans", "Plus Jakarta", R.font.plus_jakarta_sans),
+    INTER("inter", "Inter", R.font.inter),
+    ROBOTO("roboto", "Roboto", R.font.roboto),
+    POPPINS("poppins", "Poppins", R.font.poppins),
+    MANROPE("manrope", "Manrope", R.font.manrope),
+    NUNITO_SANS("nunito_sans", "Nunito Sans", R.font.nunito_sans),
+    SYSTEM_DEFAULT("system_default", "System Default", null);
+
+    val fontFamily: FontFamily by lazy {
+        if (fontResId != null) {
+            safeResourceFontFamily(fontResId)
+        } else {
+            FontFamily.Default
+        }
+    }
 
     companion object {
         fun fromKey(key: String?): AppFontOption {
@@ -72,6 +55,13 @@ enum class AppFontOption(
         }
     }
 }
+
+val InterFontFamily: FontFamily get() = AppFontOption.INTER.fontFamily
+val RobotoFontFamily: FontFamily get() = AppFontOption.ROBOTO.fontFamily
+val PoppinsFontFamily: FontFamily get() = AppFontOption.POPPINS.fontFamily
+val ManropeFontFamily: FontFamily get() = AppFontOption.MANROPE.fontFamily
+val NunitoSansFontFamily: FontFamily get() = AppFontOption.NUNITO_SANS.fontFamily
+val PlusJakartaSansFontFamily: FontFamily get() = AppFontOption.PLUS_JAKARTA_SANS.fontFamily
 
 fun buildAppTypography(fontOption: AppFontOption = AppFontOption.PLUS_JAKARTA_SANS): Typography {
     val activeFont = fontOption.fontFamily
@@ -135,4 +125,5 @@ fun buildAppTypography(fontOption: AppFontOption = AppFontOption.PLUS_JAKARTA_SA
     )
 }
 
-val Typography = buildAppTypography()
+val Typography: Typography by lazy { buildAppTypography() }
+

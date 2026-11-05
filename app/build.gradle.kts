@@ -1,5 +1,8 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.io.File
+import java.security.MessageDigest
 import java.time.Duration
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -17,7 +20,7 @@ android {
     applicationId = "com.aistudio.anonymousnet.vnkpxr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
+    versionCode = 30
     versionName = "3.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -63,6 +66,11 @@ android {
   buildFeatures {
     compose = true
     buildConfig = true
+  }
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
   dependenciesInfo {
@@ -128,6 +136,7 @@ dependencies {
   // implementation(libs.play.services.location)
   // implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
+  testImplementation(libs.androidx.compose.ui.test.manifest)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)
@@ -138,7 +147,7 @@ dependencies {
   androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.runner)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
+  // debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
   // "ksp"(libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
@@ -156,3 +165,63 @@ tasks.withType<Test> {
     events("passed", "failed", "skipped")
   }
 }
+
+val distDirProvider = layout.projectDirectory.dir("../apk-distribution")
+val buildOutputsDirProvider = layout.projectDirectory.dir("../.build-outputs")
+val keystoreFileProvider = layout.projectDirectory.file("../debug.keystore")
+val builtApkProvider = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+
+val syncApkDistribution by tasks.registering {
+  val builtApkFile = builtApkProvider
+  val distDirFile = distDirProvider
+  val buildOutputsDirFile = buildOutputsDirProvider
+  val keystoreFile = keystoreFileProvider
+  doLast {
+    val builtApk = builtApkFile.get().asFile
+    if (builtApk.exists()) {
+      val ks = keystoreFile.asFile
+      val apksignerBin = File("/opt/android/sdk/build-tools/36.0.0/apksigner")
+      if (ks.exists() && apksignerBin.exists()) {
+        val process = ProcessBuilder(
+          apksignerBin.absolutePath,
+          "sign",
+          "--ks", ks.absolutePath,
+          "--ks-pass", "pass:android",
+          "--key-pass", "pass:android",
+          "--ks-key-alias", "androiddebugkey",
+          "--min-sdk-version", "18",
+          "--v1-signing-enabled", "true",
+          "--v2-signing-enabled", "true",
+          "--v3-signing-enabled", "true",
+          "--v4-signing-enabled", "false",
+          builtApk.absolutePath
+        ).redirectErrorStream(true).start()
+        process.waitFor()
+      }
+
+      val distDir = distDirFile.asFile
+      distDir.mkdirs()
+      val targetApk = File(distDir, "app-debug.apk")
+      builtApk.copyTo(targetApk, overwrite = true)
+
+      val buildOutputsDir = buildOutputsDirFile.asFile
+      if (buildOutputsDir.exists() || buildOutputsDir.mkdirs()) {
+        builtApk.copyTo(File(buildOutputsDir, "app-debug.apk"), overwrite = true)
+      }
+
+      val apkBytes = targetApk.readBytes()
+      val digest = MessageDigest.getInstance("SHA-256")
+      val sha256Hex = digest.digest(apkBytes).joinToString("") { "%02x".format(it) }
+      File(distDir, "app-debug.apk.sha256").writeText("$sha256Hex  apk-distribution/app-debug.apk\n")
+
+      val b64Text = Base64.getMimeEncoder(76, "\n".toByteArray()).encodeToString(apkBytes)
+      File(distDir, "app-debug.apk.base64").writeText(b64Text + "\n")
+    }
+  }
+}
+
+tasks.matching { it.name == "packageDebug" || it.name == "assembleDebug" }.configureEach {
+  finalizedBy(syncApkDistribution)
+}
+
+

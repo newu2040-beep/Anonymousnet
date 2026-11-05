@@ -265,6 +265,8 @@ fun ProfileSettingsScreen(
                 .fillMaxWidth()
                 .height(220.dp)
         ) {
+            if (size.width <= 0f || size.height <= 0f) return@Canvas
+            val safeRadius = (size.width * 0.55f).coerceAtLeast(1f)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -273,9 +275,9 @@ fun ProfileSettingsScreen(
                         Color.Transparent
                     ),
                     center = Offset(size.width * 0.18f, size.height * 0.25f),
-                    radius = size.width * 0.55f
+                    radius = safeRadius
                 ),
-                radius = size.width * 0.55f,
+                radius = safeRadius,
                 center = Offset(size.width * 0.18f, size.height * 0.25f)
             )
         }

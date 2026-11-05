@@ -232,7 +232,7 @@ private fun VideoPlayerSurface(
         }
     }
 
-    BoxWithConstraints(
+    Box(
         modifier = if (isFullscreen) {
             modifier.fillMaxSize().background(Color.Black)
         } else {
@@ -749,6 +749,7 @@ fun InbuiltAudioPlayer(
                             .fillMaxWidth()
                             .height(28.dp)
                     ) {
+                        if (size.width <= 0f || size.height <= 0f) return@Canvas
                         val barCount = 28
                         val spacing = 4.dp.toPx()
                         val totalSpacing = spacing * (barCount - 1)
