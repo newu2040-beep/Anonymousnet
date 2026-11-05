@@ -1,9 +1,6 @@
 package com.example.ui.components
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
@@ -40,7 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -79,19 +75,17 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.sin
 
 /**
- * Helper for recording voice confessions with maximum original quality (.m4a AAC 256kbps 48kHz).
+ * Helper for recording real voice confessions with high quality (.m4a AAC 256kbps 48kHz).
+ * Zero simulated audio synthesis.
  */
 class VoiceConfessionRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
@@ -111,7 +105,6 @@ class VoiceConfessionRecorder(private val context: Context) {
             mr.setAudioSource(MediaRecorder.AudioSource.MIC)
             mr.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             mr.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            // Preserving high quality audio: 256kbps, 48kHz sampling rate
             mr.setAudioEncodingBitRate(256000)
             mr.setAudioSamplingRate(48000)
             mr.setOutputFile(file.absolutePath)
@@ -120,9 +113,9 @@ class VoiceConfessionRecorder(private val context: Context) {
             recorder = mr
             Uri.fromFile(file).toString()
         } catch (e: Exception) {
-            Log.w("VoiceRecorder", "Hardware mic unavailable, using synthesized voice stream: ${e.message}")
+            Log.e("VoiceRecorder", "Microphone recording failed: ${e.message}", e)
             recorder = null
-            "preset://birds_sky"
+            null
         }
     }
 
@@ -144,7 +137,7 @@ class VoiceConfessionRecorder(private val context: Context) {
         return if (file != null && file.exists() && file.length() > 128L) {
             Uri.fromFile(file).toString()
         } else {
-            "preset://birds_sky"
+            null
         }
     }
 }
@@ -157,7 +150,7 @@ class VoiceConfessionRecorder(private val context: Context) {
 fun InbuiltVideoPlayer(
     videoUri: String,
     caption: String?,
-    durationSecHint: Long = 42L,
+    durationSecHint: Long = 30L,
     modifier: Modifier = Modifier
 ) {
     var isFullscreen by remember { mutableStateOf(false) }
@@ -205,50 +198,28 @@ private fun VideoPlayerSurface(
     onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isPreset = videoUri.startsWith("preset://") || videoUri.isBlank()
     var isPlaying by remember { mutableStateOf(false) }
-    var isMuted by remember { mutableStateOf(true) }
+    var isMuted by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var currentPositionMs by remember { mutableIntStateOf(0) }
-    var totalDurationMs by remember { mutableIntStateOf((durationSecHint.coerceAtLeast(15L) * 1000L).toInt()) }
+    var totalDurationMs by remember { mutableIntStateOf((durationSecHint.coerceAtLeast(1L) * 1000L).toInt()) }
     var isBuffering by remember { mutableStateOf(false) }
-    var fallbackToCanvas by remember { mutableStateOf(isPreset) }
+    var loadError by remember { mutableStateOf(false) }
     var videoAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
 
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
 
-    // Poll progress smoothly while playing
-    LaunchedEffect(isPlaying, fallbackToCanvas, playbackSpeed) {
+    LaunchedEffect(isPlaying, playbackSpeed) {
         while (isActive && isPlaying) {
-            if (fallbackToCanvas) {
-                delay(100L)
-                val step = (100 * playbackSpeed).toInt()
-                val next = currentPositionMs + step
-                currentPositionMs = if (next >= totalDurationMs) {
-                    isPlaying = false
-                    0
-                } else {
-                    next
+            val vv = videoViewRef
+            if (vv != null && vv.isPlaying) {
+                currentPositionMs = vv.currentPosition
+                if (vv.duration > 0) {
+                    totalDurationMs = vv.duration
                 }
-            } else {
-                val vv = videoViewRef
-                if (vv != null && vv.isPlaying) {
-                    currentPositionMs = vv.currentPosition
-                    if (vv.duration > 0) {
-                        totalDurationMs = vv.duration
-                    }
-                }
-                delay(200L)
             }
-        }
-    }
-
-    LaunchedEffect(isPlaying, isMuted, fallbackToCanvas) {
-        if (isPlaying && !isMuted && fallbackToCanvas) {
-            withContext(Dispatchers.Default) {
-                playAmbientChordLoop { isPlaying && !isMuted && fallbackToCanvas }
-            }
+            delay(200L)
         }
     }
 
@@ -261,30 +232,19 @@ private fun VideoPlayerSurface(
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "video_cinema_anim")
-    val wavePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 6.28318f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave_phase"
-    )
-
     BoxWithConstraints(
         modifier = if (isFullscreen) {
             modifier.fillMaxSize().background(Color.Black)
         } else {
             modifier
                 .fillMaxWidth()
-                .heightIn(min = 200.dp, max = 340.dp)
+                .heightIn(min = 190.dp, max = 320.dp)
                 .aspectRatio(videoAspectRatio.coerceIn(0.65f, 1.95f), matchHeightConstraintsFirst = false)
                 .background(Color(0xFF0E0D18))
         }.testTag("inbuilt_video_player"),
         contentAlignment = Alignment.Center
     ) {
-        if (!fallbackToCanvas) {
+        if (!loadError && videoUri.isNotBlank()) {
             AndroidView(
                 factory = { ctx ->
                     val frameLayout = FrameLayout(ctx).apply {
@@ -320,7 +280,7 @@ private fun VideoPlayerSurface(
                         }
                         setOnErrorListener { _, _, _ ->
                             isBuffering = false
-                            fallbackToCanvas = true
+                            loadError = true
                             true
                         }
                     }
@@ -335,25 +295,17 @@ private fun VideoPlayerSurface(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            ExplorePresetArtwork(
-                presetUri = videoUri,
-                postType = "video",
-                modifier = Modifier.fillMaxSize()
-            )
-            if (isPlaying) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
-                    for (i in 0..5) {
-                        val cx = (w * (0.15f + i * 0.14f) + sin(wavePhase + i) * 28f)
-                        val cy = (h * (0.25f + (i % 3) * 0.2f) + sin(wavePhase * 0.7f + i) * 18f)
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.14f),
-                            radius = 12f + (i % 3) * 6f,
-                            center = Offset(cx, cy)
-                        )
-                    }
-                }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF151426)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Video stream unavailable on this device",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.75f)
+                )
             }
         }
 
@@ -372,7 +324,7 @@ private fun VideoPlayerSurface(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = caption?.takeIf { it.isNotBlank() } ?: "Anonymous Video Moment",
+                text = caption?.takeIf { it.isNotBlank() } ?: "Anonymous Video",
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White,
                 maxLines = 1,
@@ -452,89 +404,88 @@ private fun VideoPlayerSurface(
         }
 
         // Center Controls
-        Row(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.50f))
-                    .clickable {
-                        val target = (currentPositionMs - 10_000).coerceAtLeast(0)
-                        currentPositionMs = target
-                        try {
-                            videoViewRef?.seekTo(target)
-                        } catch (_: Exception) {
-                        }
-                    },
-                contentAlignment = Alignment.Center
+        if (!loadError) {
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Replay10,
-                    contentDescription = "Rewind 10 seconds",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.50f))
+                        .clickable {
+                            val target = (currentPositionMs - 10_000).coerceAtLeast(0)
+                            currentPositionMs = target
+                            try {
+                                videoViewRef?.seekTo(target)
+                            } catch (_: Exception) {
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Replay10,
+                        contentDescription = "Rewind 10 seconds",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
 
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f))
-                    .clickable {
-                        isPlaying = !isPlaying
-                        if (!fallbackToCanvas) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f))
+                        .clickable {
+                            isPlaying = !isPlaying
                             try {
                                 if (isPlaying) videoViewRef?.start() else videoViewRef?.pause()
                             } catch (_: Exception) {
-                                fallbackToCanvas = true
                             }
                         }
+                        .testTag("video_play_pause_button"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isBuffering) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause Video" else "Play Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
-                    .testTag("video_play_pause_button"),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isBuffering && !fallbackToCanvas) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.50f))
+                        .clickable {
+                            val target = (currentPositionMs + 10_000).coerceAtMost(totalDurationMs)
+                            currentPositionMs = target
+                            try {
+                                videoViewRef?.seekTo(target)
+                            } catch (_: Exception) {
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
-                        imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause Video" else "Play Video",
+                        imageVector = Icons.Filled.Forward10,
+                        contentDescription = "Forward 10 seconds",
                         tint = Color.White,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.50f))
-                    .clickable {
-                        val target = (currentPositionMs + 10_000).coerceAtMost(totalDurationMs)
-                        currentPositionMs = target
-                        try {
-                            videoViewRef?.seekTo(target)
-                        } catch (_: Exception) {
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Forward10,
-                    contentDescription = "Forward 10 seconds",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
             }
         }
 
@@ -589,29 +540,27 @@ private fun VideoPlayerSurface(
 }
 
 /**
- * In-Built Audio Player Component
+ * In-Built Audio Player Component (Real MediaPlayer only — zero simulated audio)
  */
 @Composable
 fun InbuiltAudioPlayer(
     audioUri: String,
     title: String?,
-    durationSecHint: Long = 28L,
+    durationSecHint: Long = 15L,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val isPreset = audioUri.startsWith("preset://") || audioUri.isBlank()
 
     var isPlaying by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var currentPositionMs by remember { mutableIntStateOf(0) }
     var totalDurationMs by remember {
-        mutableIntStateOf((durationSecHint.coerceAtLeast(10L) * 1000L).toInt())
+        mutableIntStateOf((durationSecHint.coerceAtLeast(1L) * 1000L).toInt())
     }
-    var useSynthAudio by remember(audioUri) { mutableStateOf(isPreset) }
     var mediaPlayerRef by remember { mutableStateOf<MediaPlayer?>(null) }
 
     DisposableEffect(audioUri) {
-        if (!isPreset) {
+        if (audioUri.isNotBlank()) {
             try {
                 val mp = MediaPlayer().apply {
                     setDataSource(context, Uri.parse(audioUri))
@@ -626,13 +575,12 @@ fun InbuiltAudioPlayer(
                         currentPositionMs = 0
                     }
                     setOnErrorListener { _, _, _ ->
-                        useSynthAudio = true
+                        isPlaying = false
                         true
                     }
                 }
                 mediaPlayerRef = mp
-            } catch (e: Exception) {
-                useSynthAudio = true
+            } catch (_: Exception) {
             }
         }
         onDispose {
@@ -648,33 +596,14 @@ fun InbuiltAudioPlayer(
         }
     }
 
-    LaunchedEffect(isPlaying, useSynthAudio, playbackSpeed) {
+    LaunchedEffect(isPlaying, playbackSpeed) {
         while (isActive && isPlaying) {
-            if (useSynthAudio) {
-                delay(100L)
-                val next = currentPositionMs + (100 * playbackSpeed).toInt()
-                if (next >= totalDurationMs) {
-                    currentPositionMs = 0
-                    isPlaying = false
-                } else {
-                    currentPositionMs = next
-                }
-            } else {
-                val mp = mediaPlayerRef
-                if (mp != null && mp.isPlaying) {
-                    currentPositionMs = mp.currentPosition
-                    if (mp.duration > 0) totalDurationMs = mp.duration
-                }
-                delay(150L)
+            val mp = mediaPlayerRef
+            if (mp != null && mp.isPlaying) {
+                currentPositionMs = mp.currentPosition
+                if (mp.duration > 0) totalDurationMs = mp.duration
             }
-        }
-    }
-
-    LaunchedEffect(isPlaying, useSynthAudio) {
-        if (isPlaying && useSynthAudio) {
-            withContext(Dispatchers.Default) {
-                playAmbientChordLoop { isPlaying && useSynthAudio }
-            }
+            delay(150L)
         }
     }
 
@@ -716,19 +645,19 @@ fun InbuiltAudioPlayer(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                         .clickable {
-                            val nextPlay = !isPlaying
-                            isPlaying = nextPlay
-                            if (!useSynthAudio) {
-                                try {
-                                    val mp = mediaPlayerRef
-                                    if (mp != null) {
-                                        if (nextPlay) mp.start() else mp.pause()
+                            try {
+                                val mp = mediaPlayerRef
+                                if (mp != null) {
+                                    if (isPlaying) {
+                                        mp.pause()
+                                        isPlaying = false
                                     } else {
-                                        useSynthAudio = true
+                                        mp.start()
+                                        isPlaying = true
                                     }
-                                } catch (_: Exception) {
-                                    useSynthAudio = true
                                 }
+                            } catch (_: Exception) {
+                                isPlaying = false
                             }
                         }
                         .testTag("audio_play_pause_button"),
@@ -890,66 +819,4 @@ private fun formatMilliseconds(ms: Int): String {
     val mins = totalSec / 60
     val secs = totalSec % 60
     return String.format("%02d:%02d", mins, secs)
-}
-
-private fun playAmbientChordLoop(shouldContinue: () -> Boolean) {
-    val sampleRate = 22050
-    val bufferSamples = sampleRate / 5
-    val buffer = ShortArray(bufferSamples)
-    val freqs = doubleArrayOf(261.63, 329.63, 392.00)
-    var sampleIndex = 0L
-
-    val minBufSize = AudioTrack.getMinBufferSize(
-        sampleRate,
-        AudioFormat.CHANNEL_OUT_MONO,
-        AudioFormat.ENCODING_PCM_16BIT
-    ).coerceAtLeast(bufferSamples * 2)
-
-    val track = try {
-        AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(minBufSize)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-    } catch (e: Exception) {
-        return
-    }
-
-    try {
-        track.play()
-        while (shouldContinue()) {
-            for (i in 0 until bufferSamples) {
-                val t = sampleIndex.toDouble() / sampleRate.toDouble()
-                val envelope = 0.5 + 0.5 * sin(t * 1.8)
-                val wave = (sin(2.0 * Math.PI * freqs[0] * t) +
-                    0.6 * sin(2.0 * Math.PI * freqs[1] * t) +
-                    0.4 * sin(2.0 * Math.PI * freqs[2] * t)) / 2.0
-                buffer[i] = (wave * envelope * 2200).toInt().toShort()
-                sampleIndex++
-            }
-            track.write(buffer, 0, bufferSamples)
-        }
-    } catch (_: Exception) {
-    } finally {
-        try {
-            track.stop()
-        } catch (_: Exception) {
-        }
-        try {
-            track.release()
-        } catch (_: Exception) {
-        }
-    }
 }

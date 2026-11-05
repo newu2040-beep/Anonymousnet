@@ -143,7 +143,6 @@ class AnonymousnetViewModel(
     val usernameAvailability: StateFlow<UsernameAvailability> = _usernameAvailability.asStateFlow()
     private var checkUsernameJob: Job? = null
 
-    // Two-tier Flow error handling for all Firestore streams
     val userAccountState: StateFlow<UiState<UserAccount?>> = repository.observeUserAccount(currentUserId)
         .map<UserAccount?, UiState<UserAccount?>> { UiState.Success(it) }
         .catch { e ->
@@ -234,14 +233,19 @@ class AnonymousnetViewModel(
         .map { list -> list.map { it.blockedUid }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptySet())
 
-    // All available post categories derived from published posts
+    // Expanded v3.0 Categories derived from defaults + live published posts
     val availableCategories: StateFlow<List<String>> = publishedPostsState.map { state ->
-        val defaults = listOf("General", "Life", "Feelings", "Coffee", "Dreams", "Mindfulness", "Vibes")
         if (state is UiState.Success) {
             val fromPosts = state.data.map { it.category.trim() }.filter { it.isNotBlank() }
-            (defaults + fromPosts).distinct()
-        } else defaults
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), listOf("General", "Life", "Feelings", "Coffee", "Dreams", "Mindfulness", "Vibes"))
+            (DEFAULT_CATEGORIES + fromPosts).distinct()
+        } else {
+            DEFAULT_CATEGORIES
+        }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
+        DEFAULT_CATEGORIES
+    )
 
     private data class FeedFilterParams(
         val segment: FeedSegment,
@@ -278,10 +282,7 @@ class AnonymousnetViewModel(
                     FeedSegment.POPULAR -> visible.sortedByDescending { it.likeCount + it.commentCount * 2 }
                     FeedSegment.FOLLOWING -> {
                         val followedMatches = visible.filter { it.authorUid in params.followed }
-                        followedMatches.ifEmpty {
-                            // If user is not following anyone yet, show active community creators
-                            visible
-                        }
+                        followedMatches.ifEmpty { visible }
                     }
                 }
                 UiState.Success(sorted)
@@ -418,10 +419,10 @@ class AnonymousnetViewModel(
         }
     }
 
-    // --- Composer Actions ---
+    // --- Composer Actions (No word limits) ---
 
     fun updateComposerText(text: String) {
-        if (text.length <= 500) {
+        if (text.length <= 50000) {
             _composerState.update { it.copy(text = text) }
         }
     }
@@ -455,7 +456,7 @@ class AnonymousnetViewModel(
     }
 
     fun updateComposerTopics(topics: String) {
-        _composerState.update { it.copy(topics = topics.take(120)) }
+        _composerState.update { it.copy(topics = topics.take(300)) }
     }
 
     fun clearComposerMedia() {
@@ -488,7 +489,8 @@ class AnonymousnetViewModel(
 
         val profile = (publicProfileState.value as? UiState.Success)?.data
         val handle = profile?.anonymousHandle ?: "@anon_user"
-        val displayLabel = if (state.keepAnonymous) "Anonymous" else (profile?.displayName ?: "Anonymousnet")
+        val displayLabel = if (state.keepAnonymous) "Anonymous" else (profile?.fullDisplayName() ?: "Anonymousnet")
+        val avatarUri = profile?.avatarUri?.takeIf { it.isNotBlank() }
         val finalType = if (state.mediaUri != null) state.selectedType else state.selectedType.ifEmpty { "text" }
 
         viewModelScope.launch {
@@ -499,8 +501,9 @@ class AnonymousnetViewModel(
                 isAnonymous = state.keepAnonymous,
                 anonymousLabel = displayLabel,
                 anonymousHandle = handle,
+                authorAvatarUri = avatarUri,
                 mediaUri = state.mediaUri,
-                mediaCaption = state.mediaCaption.ifBlank { trimmed.take(40) },
+                mediaCaption = state.mediaCaption.ifBlank { trimmed.take(60) },
                 mediaDurationSec = state.mediaDurationSec,
                 mediaMimeType = state.mediaMimeType,
                 topics = state.topics,
@@ -545,7 +548,11 @@ class AnonymousnetViewModel(
     fun toggleLike(post: ConfessionPost) {
         val isLiked = post.id in likedPostIds.value
         viewModelScope.launch {
-            repository.toggleLike(post, isLiked).onFailure {
+            repository.toggleLike(post, isLiked).onSuccess {
+                if (!isLiked) {
+                    showSnackbar("Liked confession by ${post.anonymousHandle}")
+                }
+            }.onFailure {
                 showSnackbar("Could not update like state.")
             }
         }
@@ -606,7 +613,9 @@ class AnonymousnetViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
         viewModelScope.launch {
-            repository.sendMessageInConversation(conversationId, recipientUid, trimmed).onFailure { e ->
+            repository.sendMessageInConversation(conversationId, recipientUid, trimmed).onSuccess {
+                showSnackbar("Private message sent")
+            }.onFailure { e ->
                 showSnackbar(e.message ?: "Could not send message.")
             }
         }
@@ -688,6 +697,14 @@ class AnonymousnetViewModel(
         }
     }
 
+    fun toggleCompactMode(currentlyCompact: Boolean) {
+        viewModelScope.launch {
+            repository.updateUserPreferences(compactMode = !currentlyCompact).onSuccess {
+                showSnackbar(if (!currentlyCompact) "Compact Mode enabled for smaller displays" else "Standard Display Mode active")
+            }
+        }
+    }
+
     fun setColorTheme(themeKey: String) {
         viewModelScope.launch {
             repository.updateUserPreferences(colorTheme = themeKey)
@@ -749,21 +766,55 @@ class AnonymousnetViewModel(
         _usernameAvailability.value = UsernameAvailability.Idle
     }
 
-    fun updateProfileAndUsername(
+    fun updateFullProfileDetails(
         newHandle: String,
         newDisplayName: String,
+        newSurname: String,
+        newGender: String,
+        newAge: Int,
+        newInterests: String,
+        newAvatarUri: String,
         onComplete: (Boolean) -> Unit
     ) {
         viewModelScope.launch {
-            repository.updateUsernameAndDisplayName(newHandle, newDisplayName).onSuccess {
+            repository.updateFullProfile(
+                rawHandle = newHandle,
+                newDisplayName = newDisplayName,
+                newSurname = newSurname,
+                newGender = newGender,
+                newAge = newAge,
+                newInterests = newInterests,
+                newAvatarUri = newAvatarUri
+            ).onSuccess {
                 val normalized = repository.normalizeHandle(newHandle)
-                showSnackbar("Username successfully updated to @$normalized!")
+                showSnackbar("Profile & @$normalized updated in real time!")
                 onComplete(true)
             }.onFailure { err ->
-                showSnackbar(err.message ?: "Could not update username.")
+                showSnackbar(err.message ?: "Could not update profile details.")
                 onComplete(false)
             }
         }
+    }
+
+    fun updateProfileAvatarOnly(newAvatarUri: String) {
+        val currentProfile = (publicProfileState.value as? UiState.Success)?.data
+        val handle = currentProfile?.anonymousHandle?.removePrefix("@") ?: "anon_user"
+        val displayName = currentProfile?.displayName ?: "Anonymousnet"
+        val surname = currentProfile?.surname ?: ""
+        val gender = currentProfile?.gender ?: ""
+        val age = currentProfile?.age ?: 0
+        val interests = currentProfile?.interests ?: ""
+
+        updateFullProfileDetails(
+            newHandle = handle,
+            newDisplayName = displayName,
+            newSurname = surname,
+            newGender = gender,
+            newAge = age,
+            newInterests = interests,
+            newAvatarUri = newAvatarUri,
+            onComplete = {}
+        )
     }
 
     fun markNotificationRead(notificationId: String) {
@@ -796,8 +847,28 @@ class AnonymousnetViewModel(
         _snackbarMessage.value = null
     }
 
-    private companion object {
-        const val TAG = "AnonymousnetVM"
-        const val STOP_TIMEOUT_MILLIS = 5000L
+    companion object {
+        private const val TAG = "AnonymousnetVM"
+        private const val STOP_TIMEOUT_MILLIS = 5000L
+        val DEFAULT_CATEGORIES = listOf(
+            "General",
+            "Confession",
+            "Life",
+            "Feelings",
+            "Love",
+            "Relationships",
+            "Mental Health",
+            "Campus",
+            "Career",
+            "Coffee",
+            "Dreams",
+            "Mindfulness",
+            "Secrets",
+            "Tech",
+            "Night Thoughts",
+            "Friendship",
+            "Family",
+            "Gratitude"
+        )
     }
 }

@@ -139,6 +139,66 @@ enum class AppColorTheme(
         softSurfaceLight = Color(0xFFFFFBEB),
         darkPrimary = Color(0xFFFBBF24),
         previewColor = Color(0xFFF59E0B)
+    ),
+    SUNSET_CORAL(
+        key = "sunset_coral",
+        displayName = "Sunset Coral",
+        primary = Color(0xFFEA580C),
+        primaryDark = Color(0xFFC2410C),
+        secondaryLight = Color(0xFFFB923C),
+        softSurfaceLight = Color(0xFFFFF7ED),
+        darkPrimary = Color(0xFFFB923C),
+        previewColor = Color(0xFFF97316)
+    ),
+    CYBERPUNK_NEON(
+        key = "cyberpunk_neon",
+        displayName = "Cyberpunk Neon",
+        primary = Color(0xFFC026D3),
+        primaryDark = Color(0xFFA21CAF),
+        secondaryLight = Color(0xFFE879F9),
+        softSurfaceLight = Color(0xFFFDF4FF),
+        darkPrimary = Color(0xFFE879F9),
+        previewColor = Color(0xFFD946EF)
+    ),
+    FOREST_EMERALD(
+        key = "forest_emerald",
+        displayName = "Forest Emerald",
+        primary = Color(0xFF15803D),
+        primaryDark = Color(0xFF166534),
+        secondaryLight = Color(0xFF4ADE80),
+        softSurfaceLight = Color(0xFFF0FDF4),
+        darkPrimary = Color(0xFF4ADE80),
+        previewColor = Color(0xFF22C55E)
+    ),
+    ROYAL_GOLD(
+        key = "royal_gold",
+        displayName = "Royal Gold",
+        primary = Color(0xFFB45309),
+        primaryDark = Color(0xFF92400E),
+        secondaryLight = Color(0xFFF59E0B),
+        softSurfaceLight = Color(0xFFFEF3C7),
+        darkPrimary = Color(0xFFFBBF24),
+        previewColor = Color(0xFFD97706)
+    ),
+    ARCTIC_FROST(
+        key = "arctic_frost",
+        displayName = "Arctic Frost",
+        primary = Color(0xFF0891B2),
+        primaryDark = Color(0xFF0E7490),
+        secondaryLight = Color(0xFF22D3EE),
+        softSurfaceLight = Color(0xFFECFEFF),
+        darkPrimary = Color(0xFF22D3EE),
+        previewColor = Color(0xFF06B6D4)
+    ),
+    CRIMSON_VELVET(
+        key = "crimson_velvet",
+        displayName = "Crimson Velvet",
+        primary = Color(0xFFB91C1C),
+        primaryDark = Color(0xFF991B1B),
+        secondaryLight = Color(0xFFF87171),
+        softSurfaceLight = Color(0xFFFEF2F2),
+        darkPrimary = Color(0xFFF87171),
+        previewColor = Color(0xFFDC2626)
     );
 
     companion object {
@@ -154,6 +214,12 @@ enum class AppColorTheme(
                 "lavender" -> LAVENDER
                 "rose_pink", "rose" -> ROSE_PINK
                 "warm_sand", "amber" -> WARM_SAND
+                "sunset_coral" -> SUNSET_CORAL
+                "cyberpunk_neon" -> CYBERPUNK_NEON
+                "forest_emerald" -> FOREST_EMERALD
+                "royal_gold" -> ROYAL_GOLD
+                "arctic_frost" -> ARCTIC_FROST
+                "crimson_velvet" -> CRIMSON_VELVET
                 else -> CUSTOM_ACCENT
             }
         }

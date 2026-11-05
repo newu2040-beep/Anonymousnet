@@ -3,51 +3,52 @@ package com.example.data
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
-@IgnoreExtraProperties
 data class UserAccount(
     @DocumentId val id: String = "",
-    val userId: String = "",
-    val authProvider: String = "google",
-    val accountState: String = "active",
+    val uid: String = "",
+    val anonymousHandle: String = "@anon_user",
     val guest: Boolean = false,
     val themeMode: String = "light",
     val colorTheme: String = "custom_accent",
-    val useSystemFont: Boolean = false,
     val fontFamily: String = "plus_jakarta_sans",
+    val useSystemFont: Boolean = false,
+    val compactMode: Boolean = false,
     val keepAnonymousDefault: Boolean = true,
     val notificationsEnabled: Boolean = true,
-    val mutedTopics: String = "",
+    val safetyGuidelinesAccepted: Boolean = true,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
-        "authProvider" to authProvider,
-        "accountState" to accountState,
+    fun toCreateMap(): Map<String, Any?> = mapOf(
+        "uid" to uid,
+        "anonymousHandle" to anonymousHandle,
         "guest" to guest,
         "themeMode" to themeMode,
         "colorTheme" to colorTheme,
-        "useSystemFont" to useSystemFont,
         "fontFamily" to fontFamily,
+        "useSystemFont" to useSystemFont,
+        "compactMode" to compactMode,
         "keepAnonymousDefault" to keepAnonymousDefault,
         "notificationsEnabled" to notificationsEnabled,
-        "mutedTopics" to mutedTopics,
+        "safetyGuidelinesAccepted" to safetyGuidelinesAccepted,
         "createdAt" to FieldValue.serverTimestamp(),
         "updatedAt" to FieldValue.serverTimestamp()
     )
 }
 
-@IgnoreExtraProperties
 data class PublicProfile(
     @DocumentId val id: String = "",
-    val userId: String = "",
+    val uid: String = "",
     val displayName: String = "Anonymousnet",
+    val surname: String = "",
     val anonymousHandle: String = "@anon_user",
-    val avatarKey: String = "hooded_violet",
-    val isVerified: Boolean = true,
+    val gender: String = "",
+    val age: Int = 0,
+    val interests: String = "",
+    val avatarKey: String = "hat_glasses",
+    val avatarUri: String = "",
     val postCount: Long = 0L,
     val viewCount: Long = 0L,
     val likeCount: Long = 0L,
@@ -56,12 +57,22 @@ data class PublicProfile(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
+    fun fullDisplayName(): String {
+        val first = displayName.trim().ifEmpty { "Anonymousnet" }
+        val last = surname.trim()
+        return if (last.isNotEmpty()) "$first $last" else first
+    }
+
+    fun toCreateMap(): Map<String, Any?> = mapOf(
+        "uid" to uid,
         "displayName" to displayName,
+        "surname" to surname,
         "anonymousHandle" to anonymousHandle,
+        "gender" to gender,
+        "age" to age,
+        "interests" to interests,
         "avatarKey" to avatarKey,
-        "isVerified" to isVerified,
+        "avatarUri" to avatarUri,
         "postCount" to postCount,
         "viewCount" to viewCount,
         "likeCount" to likeCount,
@@ -72,54 +83,66 @@ data class PublicProfile(
     )
 }
 
-@IgnoreExtraProperties
+sealed interface UsernameAvailability {
+    data object Idle : UsernameAvailability
+    data object Empty : UsernameAvailability
+    data object Checking : UsernameAvailability
+    data class Available(val handle: String) : UsernameAvailability
+    data class Taken(val handle: String) : UsernameAvailability
+    data class InvalidFormat(val reason: String) : UsernameAvailability
+    data class IsCurrentUser(val handle: String) : UsernameAvailability
+}
+
 data class ConfessionPost(
     @DocumentId val id: String = "",
     val authorUid: String = "",
     val anonymousLabel: String = "Anonymous",
     val anonymousHandle: String = "@anon_user",
+    val authorAvatarUri: String? = null,
     val isAnonymous: Boolean = true,
+    val type: String = "text", // text | image | video | audio | other
+    val category: String = "General",
     val text: String = "",
-    val type: String = "text", // text, image, video, audio, other
-    val category: String = "General", // Customizable Category (e.g. Life, Confession, Dreams, Coffee, Love, Thoughts)
     val mediaUri: String? = null,
     val mediaCaption: String? = null,
     val mediaDurationSec: Long? = null,
     val mediaMimeType: String? = null,
     val topics: String? = null,
     val contentWarning: String? = null,
-    val status: String = "published", // draft, processing, published, under_review, removed, deleted
+    val status: String = "published", // published | draft | hidden
     val likeCount: Long = 0L,
     val commentCount: Long = 0L,
     val viewCount: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    @Suppress("UNCHECKED_CAST")
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "authorUid" to authorUid,
-        "anonymousLabel" to anonymousLabel,
-        "anonymousHandle" to anonymousHandle,
-        "isAnonymous" to isAnonymous,
-        "text" to text,
-        "type" to type,
-        "category" to category,
-        "mediaUri" to mediaUri,
-        "mediaCaption" to mediaCaption,
-        "mediaDurationSec" to mediaDurationSec,
-        "mediaMimeType" to mediaMimeType,
-        "topics" to topics,
-        "contentWarning" to contentWarning,
-        "status" to status,
-        "likeCount" to likeCount,
-        "commentCount" to commentCount,
-        "viewCount" to viewCount,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp()
-    ).filterValues { it != null } as Map<String, Any>
+    fun toCreateMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>(
+            "authorUid" to authorUid,
+            "anonymousLabel" to anonymousLabel,
+            "anonymousHandle" to anonymousHandle,
+            "isAnonymous" to isAnonymous,
+            "type" to type,
+            "category" to category,
+            "text" to text,
+            "status" to status,
+            "likeCount" to likeCount,
+            "commentCount" to commentCount,
+            "viewCount" to viewCount,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (!authorAvatarUri.isNullOrBlank()) map["authorAvatarUri"] = authorAvatarUri
+        if (mediaUri != null) map["mediaUri"] = mediaUri
+        if (mediaCaption != null) map["mediaCaption"] = mediaCaption
+        if (mediaDurationSec != null) map["mediaDurationSec"] = mediaDurationSec
+        if (mediaMimeType != null) map["mediaMimeType"] = mediaMimeType
+        if (topics != null) map["topics"] = topics
+        if (contentWarning != null) map["contentWarning"] = contentWarning
+        return map
+    }
 }
 
-@IgnoreExtraProperties
 data class PostComment(
     @DocumentId val id: String = "",
     val postId: String = "",
@@ -130,7 +153,7 @@ data class PostComment(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
+    fun toCreateMap(): Map<String, Any?> = mapOf(
         "postId" to postId,
         "authorUid" to authorUid,
         "anonymousLabel" to anonymousLabel,
@@ -141,15 +164,6 @@ data class PostComment(
     )
 }
 
-@IgnoreExtraProperties
-data class PostLike(
-    @DocumentId val id: String = "",
-    val postId: String = "",
-    val userId: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null
-)
-
-@IgnoreExtraProperties
 data class SavedOrLikedPostRef(
     @DocumentId val id: String = "",
     val userId: String = "",
@@ -158,72 +172,55 @@ data class SavedOrLikedPostRef(
     val postType: String = "text",
     val postMediaUri: String? = null,
     val anonymousLabel: String = "Anonymous",
-    @ServerTimestamp val createdAt: Timestamp? = null
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    @Suppress("UNCHECKED_CAST")
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
-        "postId" to postId,
-        "postText" to postText,
-        "postType" to postType,
-        "postMediaUri" to postMediaUri,
-        "anonymousLabel" to anonymousLabel,
-        "createdAt" to FieldValue.serverTimestamp()
-    ).filterValues { it != null } as Map<String, Any>
+    fun toCreateMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>(
+            "userId" to userId,
+            "postId" to postId,
+            "postText" to postText,
+            "postType" to postType,
+            "anonymousLabel" to anonymousLabel,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (postMediaUri != null) map["postMediaUri"] = postMediaUri
+        return map
+    }
 }
 
-@IgnoreExtraProperties
 data class FollowRef(
     @DocumentId val id: String = "",
     val followerUid: String = "",
     val targetUid: String = "",
     val targetHandle: String = "@anon_user",
-    @ServerTimestamp val createdAt: Timestamp? = null
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
+    fun toCreateMap(): Map<String, Any?> = mapOf(
         "followerUid" to followerUid,
         "targetUid" to targetUid,
         "targetHandle" to targetHandle,
-        "createdAt" to FieldValue.serverTimestamp()
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
     )
 }
 
-@IgnoreExtraProperties
-data class DirectMessage(
-    @DocumentId val id: String = "",
-    val conversationId: String = "",
-    val senderUid: String = "",
-    val recipientUid: String = "",
-    val text: String = "",
-    val mediaUri: String? = null,
-    @ServerTimestamp val createdAt: Timestamp? = null
-) {
-    @Suppress("UNCHECKED_CAST")
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "conversationId" to conversationId,
-        "senderUid" to senderUid,
-        "recipientUid" to recipientUid,
-        "text" to text,
-        "mediaUri" to mediaUri,
-        "createdAt" to FieldValue.serverTimestamp()
-    ).filterValues { it != null } as Map<String, Any>
-}
-
-@IgnoreExtraProperties
 data class Conversation(
     @DocumentId val id: String = "",
     val participantUids: List<String> = emptyList(),
     val initiatorUid: String = "",
     val recipientUid: String = "",
-    val status: String = "pending", // pending, accepted, declined, blocked
+    val status: String = "pending", // pending | accepted | declined | blocked
     val lastMessageText: String = "",
     val lastMessageSenderUid: String = "",
-    val initiatorHandle: String = "@anon_sender",
-    val recipientHandle: String = "@anon_recipient",
+    val initiatorHandle: String = "@anon_user",
+    val recipientHandle: String = "@anon_user",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
+    fun toCreateMap(): Map<String, Any?> = mapOf(
         "participantUids" to participantUids,
         "initiatorUid" to initiatorUid,
         "recipientUid" to recipientUid,
@@ -237,88 +234,92 @@ data class Conversation(
     )
 }
 
-@IgnoreExtraProperties
-data class BlockedUserRef(
+data class DirectMessage(
     @DocumentId val id: String = "",
-    val userId: String = "",
-    val blockedUid: String = "",
-    val blockedLabel: String = "Anonymous",
-    @ServerTimestamp val createdAt: Timestamp? = null
-) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
-        "blockedUid" to blockedUid,
-        "blockedLabel" to blockedLabel,
-        "createdAt" to FieldValue.serverTimestamp()
-    )
-}
-
-@IgnoreExtraProperties
-data class UserNotification(
-    @DocumentId val id: String = "",
-    val userId: String = "",
-    val type: String = "system", // comment, like, follow, dm_request, dm_message, moderation, security, system
-    val title: String = "",
-    val body: String = "",
-    val targetId: String = "",
-    val isRead: Boolean = false,
+    val conversationId: String = "",
+    val senderUid: String = "",
+    val recipientUid: String = "",
+    val text: String = "",
+    val mediaUri: String? = null,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "userId" to userId,
-        "type" to type,
-        "title" to title,
-        "body" to body,
-        "targetId" to targetId,
-        "isRead" to isRead,
-        "createdAt" to FieldValue.serverTimestamp(),
-        "updatedAt" to FieldValue.serverTimestamp()
-    )
+    fun toCreateMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>(
+            "conversationId" to conversationId,
+            "senderUid" to senderUid,
+            "recipientUid" to recipientUid,
+            "text" to text,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (mediaUri != null) map["mediaUri"] = mediaUri
+        return map
+    }
 }
 
-@IgnoreExtraProperties
 data class ContentReport(
     @DocumentId val id: String = "",
     val reporterUid: String = "",
     val targetType: String = "post",
     val targetId: String = "",
-    val reason: String = "other",
+    val reason: String = "harassment",
     val details: String = "",
     val status: String = "submitted",
-    @ServerTimestamp val createdAt: Timestamp? = null
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
+    fun toCreateMap(): Map<String, Any?> = mapOf(
         "reporterUid" to reporterUid,
         "targetType" to targetType,
         "targetId" to targetId,
         "reason" to reason,
         "details" to details,
         "status" to status,
-        "createdAt" to FieldValue.serverTimestamp()
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
     )
 }
 
-@IgnoreExtraProperties
-data class UsernameRecord(
+data class BlockedUserRef(
     @DocumentId val id: String = "",
-    val uid: String = "",
-    val handle: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null
+    val userId: String = "",
+    val blockedUid: String = "",
+    val blockedLabel: String = "Anonymous",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
-    fun toCreateMap(): Map<String, Any> = mapOf(
-        "uid" to uid,
-        "handle" to handle,
-        "createdAt" to FieldValue.serverTimestamp()
+    fun toCreateMap(): Map<String, Any?> = mapOf(
+        "userId" to userId,
+        "blockedUid" to blockedUid,
+        "blockedLabel" to blockedLabel,
+        "createdAt" to FieldValue.serverTimestamp(),
+        "updatedAt" to FieldValue.serverTimestamp()
     )
 }
 
-sealed interface UsernameAvailability {
-    data object Idle : UsernameAvailability
-    data object Checking : UsernameAvailability
-    data object Empty : UsernameAvailability
-    data class InvalidFormat(val reason: String) : UsernameAvailability
-    data class IsCurrentUser(val handle: String) : UsernameAvailability
-    data class Available(val handle: String) : UsernameAvailability
-    data class Taken(val handle: String) : UsernameAvailability
+data class UserNotification(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val type: String = "activity",
+    val title: String = "",
+    val body: String = "",
+    val targetId: String? = null,
+    val isRead: Boolean = false,
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun toCreateMap(): Map<String, Any?> {
+        val map = mutableMapOf<String, Any?>(
+            "userId" to userId,
+            "type" to type,
+            "title" to title,
+            "body" to body,
+            "isRead" to isRead,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (targetId != null) map["targetId"] = targetId
+        return map
+    }
 }

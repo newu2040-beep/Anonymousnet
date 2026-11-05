@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -51,12 +50,11 @@ import com.example.data.ConfessionPost
 import com.example.ui.ExploreFilter
 import com.example.ui.ExploreSort
 import com.example.ui.UiState
-import com.example.ui.components.ExplorePresetArtwork
 import com.example.ui.theme.AnonHeartRed
 import com.example.ui.theme.AnonStarGold
 
 /**
- * Screen 4 — Explore
+ * Screen 4 — Explore (Anonymousnet v3.0)
  * Category-based exploration, search, sort, and two-column visual grid.
  */
 @Composable
@@ -134,7 +132,7 @@ fun ExploreScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
-                    placeholder = { Text("Search confessions, categories (#coffee, #dreams)...") },
+                    placeholder = { Text("Search confessions, categories, or topics...") },
                     singleLine = true,
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
@@ -423,13 +421,7 @@ private fun ExploreCard(
                     .height(148.dp)
                     .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
             ) {
-                if (post.mediaUri?.startsWith("preset://") == true || post.type == "video" || post.type == "audio") {
-                    ExplorePresetArtwork(
-                        presetUri = post.mediaUri ?: "preset://${post.type}",
-                        postType = post.type,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else if (!post.mediaUri.isNullOrBlank()) {
+                if (!post.mediaUri.isNullOrBlank() && post.type == "image") {
                     AsyncImage(
                         model = post.mediaUri,
                         contentDescription = post.mediaCaption ?: "Confession",

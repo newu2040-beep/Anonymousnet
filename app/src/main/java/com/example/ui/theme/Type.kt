@@ -8,47 +8,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val InterFontFamily = FontFamily(
-    Font(R.font.inter, FontWeight.Normal),
-    Font(R.font.inter, FontWeight.Medium),
-    Font(R.font.inter, FontWeight.SemiBold),
-    Font(R.font.inter, FontWeight.Bold)
-)
+val InterFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.inter))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
-val RobotoFontFamily = FontFamily(
-    Font(R.font.roboto, FontWeight.Normal),
-    Font(R.font.roboto, FontWeight.Medium),
-    Font(R.font.roboto, FontWeight.SemiBold),
-    Font(R.font.roboto, FontWeight.Bold)
-)
+val RobotoFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.roboto))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
-val PoppinsFontFamily = FontFamily(
-    Font(R.font.poppins, FontWeight.Normal),
-    Font(R.font.poppins, FontWeight.Medium),
-    Font(R.font.poppins, FontWeight.SemiBold),
-    Font(R.font.poppins, FontWeight.Bold)
-)
+val PoppinsFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.poppins))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
-val ManropeFontFamily = FontFamily(
-    Font(R.font.manrope, FontWeight.Normal),
-    Font(R.font.manrope, FontWeight.Medium),
-    Font(R.font.manrope, FontWeight.SemiBold),
-    Font(R.font.manrope, FontWeight.Bold)
-)
+val ManropeFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.manrope))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
-val NunitoSansFontFamily = FontFamily(
-    Font(R.font.nunito_sans, FontWeight.Normal),
-    Font(R.font.nunito_sans, FontWeight.Medium),
-    Font(R.font.nunito_sans, FontWeight.SemiBold),
-    Font(R.font.nunito_sans, FontWeight.Bold)
-)
+val NunitoSansFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.nunito_sans))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
-val PlusJakartaSansFontFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
-)
+val PlusJakartaSansFontFamily: FontFamily = try {
+    FontFamily(Font(R.font.plus_jakarta_sans))
+} catch (_: Throwable) {
+    FontFamily.Default
+}
 
 enum class AppFontOption(
     val key: String,

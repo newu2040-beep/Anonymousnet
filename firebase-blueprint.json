@@ -2,206 +2,123 @@
   "entities": {
     "UserAccount": {
       "title": "UserAccount",
-      "description": "Private user account settings and metadata. Strictly isolated to owner.",
+      "description": "Private user account preferences and safety state. Never readable by other users.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Authenticated user UID" },
-        "authProvider": { "type": "string", "enum": ["google", "guest_google"] },
-        "accountState": { "type": "string", "enum": ["active", "suspended"] },
-        "guest": { "type": "boolean", "description": "Whether the user entered via pseudonymous guest mode" },
-        "themeMode": { "type": "string", "enum": ["light", "dark", "system"] },
-        "keepAnonymousDefault": { "type": "boolean" },
-        "notificationsEnabled": { "type": "boolean" },
-        "mutedTopics": { "type": "string", "description": "Comma-separated muted topics" },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Must be FieldValue.serverTimestamp()" },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Must be FieldValue.serverTimestamp()" }
-      },
-      "required": ["userId", "authProvider", "accountState", "guest", "themeMode", "keepAnonymousDefault", "notificationsEnabled", "createdAt", "updatedAt"]
-    },
-    "PublicProfile": {
-      "title": "PublicProfile",
-      "description": "Pseudonymous public profile without email or legal name.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "displayName": { "type": "string" },
-        "anonymousHandle": { "type": "string" },
-        "avatarKey": { "type": "string" },
-        "isVerified": { "type": "boolean" },
-        "postCount": { "type": "integer" },
-        "viewCount": { "type": "integer" },
-        "likeCount": { "type": "integer" },
+        "uid": { "type": "string", "description": "Firebase Auth UID of the account owner" },
+        "anonymousHandle": { "type": "string", "description": "Pseudonymous handle such as @anon_user" },
+        "guest": { "type": "boolean", "description": "Whether the user started in anonymous guest mode" },
+        "themeMode": { "type": "string", "enum": ["light", "dark"], "description": "Preferred UI theme mode" },
+        "colorTheme": { "type": "string", "description": "Selected color theme key" },
+        "fontFamily": { "type": "string", "description": "Selected typography font key" },
+        "useSystemFont": { "type": "boolean", "description": "Whether to use the device system default font" },
+        "compactMode": { "type": "boolean", "description": "Whether real-time compact UI resizing mode is enabled for smaller phone displays" },
+        "keepAnonymousDefault": { "type": "boolean", "description": "Default state of Keep it anonymous toggle" },
+        "notificationsEnabled": { "type": "boolean", "description": "Whether push and activity notifications are enabled" },
+        "safetyGuidelinesAccepted": { "type": "boolean", "description": "Whether community safety terms were accepted" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "displayName", "anonymousHandle", "avatarKey", "isVerified", "postCount", "viewCount", "likeCount", "createdAt", "updatedAt"]
+      "required": [
+        "uid",
+        "anonymousHandle",
+        "guest",
+        "themeMode",
+        "keepAnonymousDefault",
+        "notificationsEnabled",
+        "safetyGuidelinesAccepted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Publicly visible pseudonymous identity profile containing zero PII, with optional custom name, surname, gender, age, interests, and gallery avatar.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Owner UID" },
+        "displayName": { "type": "string", "description": "Public display name" },
+        "surname": { "type": "string", "description": "Optional surname or family/alias name" },
+        "anonymousHandle": { "type": "string", "description": "Pseudonymous handle" },
+        "gender": { "type": "string", "enum": ["", "Male", "Female"], "description": "User gender (Male or Female)" },
+        "age": { "type": "integer", "description": "User age in years" },
+        "interests": { "type": "string", "description": "Comma-separated or freeform user interests" },
+        "avatarKey": { "type": "string", "description": "Selected anonymous avatar preset key" },
+        "avatarUri": { "type": "string", "description": "Optional custom anonymous avatar URI chosen from device gallery" },
+        "postCount": { "type": "integer" },
+        "viewCount": { "type": "integer" },
+        "likeCount": { "type": "integer" },
+        "followersCount": { "type": "integer" },
+        "followingCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "anonymousHandle",
+        "avatarKey",
+        "postCount",
+        "viewCount",
+        "likeCount",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "ConfessionPost": {
       "title": "ConfessionPost",
-      "description": "Anonymous confession post supporting text, image, video, audio, and other attachments.",
+      "description": "An anonymous or pseudonymous confession post with no word limit.",
       "type": "object",
       "properties": {
-        "authorUid": { "type": "string" },
-        "anonymousLabel": { "type": "string" },
-        "anonymousHandle": { "type": "string" },
+        "authorUid": { "type": "string", "description": "Author UID for ownership enforcement" },
+        "anonymousLabel": { "type": "string", "description": "Displayed author label" },
+        "anonymousHandle": { "type": "string", "description": "Displayed handle" },
+        "authorAvatarUri": { "type": "string", "description": "Optional anonymous avatar URI of author" },
         "isAnonymous": { "type": "boolean" },
-        "text": { "type": "string" },
         "type": { "type": "string", "enum": ["text", "image", "video", "audio", "other"] },
+        "category": { "type": "string" },
+        "text": { "type": "string", "description": "Confession body text (no word limit, up to 50000 characters)" },
         "mediaUri": { "type": "string" },
         "mediaCaption": { "type": "string" },
         "mediaDurationSec": { "type": "integer" },
         "mediaMimeType": { "type": "string" },
         "topics": { "type": "string" },
         "contentWarning": { "type": "string" },
-        "status": { "type": "string", "enum": ["draft", "processing", "published", "under_review", "removed", "deleted"] },
+        "status": { "type": "string", "enum": ["published", "draft", "hidden"] },
         "likeCount": { "type": "integer" },
         "commentCount": { "type": "integer" },
         "viewCount": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["authorUid", "anonymousLabel", "anonymousHandle", "isAnonymous", "text", "type", "status", "likeCount", "commentCount", "viewCount", "createdAt", "updatedAt"]
-    },
-    "PostComment": {
-      "title": "PostComment",
-      "description": "Anonymous comment on a confession post.",
-      "type": "object",
-      "properties": {
-        "postId": { "type": "string" },
-        "authorUid": { "type": "string" },
-        "anonymousLabel": { "type": "string" },
-        "text": { "type": "string" },
-        "status": { "type": "string", "enum": ["published", "under_review", "deleted"] },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["postId", "authorUid", "anonymousLabel", "text", "status", "createdAt", "updatedAt"]
-    },
-    "PostLike": {
-      "title": "PostLike",
-      "description": "Idempotent per-user like record on a post.",
-      "type": "object",
-      "properties": {
-        "postId": { "type": "string" },
-        "userId": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["postId", "userId", "createdAt"]
-    },
-    "SavedPostRef": {
-      "title": "SavedPostRef",
-      "description": "User's private saved post bookmark.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "postId": { "type": "string" },
-        "postText": { "type": "string" },
-        "postType": { "type": "string" },
-        "postMediaUri": { "type": "string" },
-        "anonymousLabel": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "postId", "postText", "postType", "anonymousLabel", "createdAt"]
-    },
-    "LikedPostRef": {
-      "title": "LikedPostRef",
-      "description": "User's private liked post record.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "postId": { "type": "string" },
-        "postText": { "type": "string" },
-        "postType": { "type": "string" },
-        "postMediaUri": { "type": "string" },
-        "anonymousLabel": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "postId", "postText", "postType", "anonymousLabel", "createdAt"]
-    },
-    "BlockedUserRef": {
-      "title": "BlockedUserRef",
-      "description": "User's private blocked author record.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "blockedUid": { "type": "string" },
-        "blockedLabel": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "blockedUid", "blockedLabel", "createdAt"]
-    },
-    "UserNotification": {
-      "title": "UserNotification",
-      "description": "User's private activity notification.",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "type": { "type": "string", "enum": ["comment", "like", "moderation", "security", "system"] },
-        "title": { "type": "string" },
-        "body": { "type": "string" },
-        "targetId": { "type": "string" },
-        "isRead": { "type": "boolean" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "type", "title", "body", "targetId", "isRead", "createdAt", "updatedAt"]
-    },
-    "ContentReport": {
-      "title": "ContentReport",
-      "description": "Moderation report submitted by a user.",
-      "type": "object",
-      "properties": {
-        "reporterUid": { "type": "string" },
-        "targetType": { "type": "string", "enum": ["post", "comment", "user"] },
-        "targetId": { "type": "string" },
-        "reason": { "type": "string", "enum": ["harassment", "threats", "self_harm", "sexual_exploitation", "hate", "spam", "impersonation", "privacy", "illegal", "other"] },
-        "details": { "type": "string" },
-        "status": { "type": "string", "enum": ["submitted", "reviewed", "resolved"] },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["reporterUid", "targetType", "targetId", "reason", "details", "status", "createdAt"]
+      "required": [
+        "authorUid",
+        "anonymousLabel",
+        "anonymousHandle",
+        "isAnonymous",
+        "type",
+        "text",
+        "status",
+        "likeCount",
+        "commentCount",
+        "viewCount",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserAccount" },
-      "description": "Private user account and preferences."
+      "description": "Private user account settings and preferences"
     },
     "/publicProfiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicProfile" },
-      "description": "Pseudonymous public profile metadata."
+      "description": "Public pseudonymous profile metadata"
     },
     "/posts/{postId}": {
       "schema": { "$ref": "#/entities/ConfessionPost" },
-      "description": "Confession posts for Feed, Explore, and My Posts."
-    },
-    "/posts/{postId}/comments/{commentId}": {
-      "schema": { "$ref": "#/entities/PostComment" },
-      "description": "Comments on a confession post."
-    },
-    "/posts/{postId}/likes/{userId}": {
-      "schema": { "$ref": "#/entities/PostLike" },
-      "description": "Per-user likes on a confession post."
-    },
-    "/users/{userId}/saved/{postId}": {
-      "schema": { "$ref": "#/entities/SavedPostRef" },
-      "description": "Private saved posts for a user."
-    },
-    "/users/{userId}/liked/{postId}": {
-      "schema": { "$ref": "#/entities/LikedPostRef" },
-      "description": "Private liked posts for a user."
-    },
-    "/users/{userId}/blocks/{blockedUid}": {
-      "schema": { "$ref": "#/entities/BlockedUserRef" },
-      "description": "Private list of blocked authors for a user."
-    },
-    "/users/{userId}/notifications/{notificationId}": {
-      "schema": { "$ref": "#/entities/UserNotification" },
-      "description": "Private activity notifications for a user."
-    },
-    "/reports/{reportId}": {
-      "schema": { "$ref": "#/entities/ContentReport" },
-      "description": "Abuse and moderation reports."
+      "description": "Top-level confession posts"
     }
   }
 }

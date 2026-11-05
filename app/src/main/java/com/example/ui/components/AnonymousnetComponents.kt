@@ -1,5 +1,9 @@
 package com.example.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,7 +20,6 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,11 +52,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.ui.MainTab
 import com.example.ui.theme.AnonHeartRed
+import com.example.ui.theme.LocalCompactMode
 
 @Composable
 fun HoodedAnonymousHeroIllustration(
@@ -195,7 +201,8 @@ fun AnonymousHatAvatar(
     size: Dp = 44.dp,
     backgroundColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
     iconTint: Color = MaterialTheme.colorScheme.primary,
-    showVerifiedBadge: Boolean = false
+    showVerifiedBadge: Boolean = false,
+    avatarUri: String? = null
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
 
@@ -203,57 +210,70 @@ fun AnonymousHatAvatar(
         modifier = modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(CircleShape)
-                .background(backgroundColor)
-        ) {
-            val w = this.size.width
-            val h = this.size.height
+        if (!avatarUri.isNullOrBlank()) {
+            AsyncImage(
+                model = avatarUri,
+                contentDescription = "Anonymous Profile Picture",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(backgroundColor)
+                    .border(2.dp, primaryColor.copy(alpha = 0.4f), CircleShape)
+            )
+        } else {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(backgroundColor)
+            ) {
+                val w = this.size.width
+                val h = this.size.height
 
-            val shoulderPath = Path().apply {
-                moveTo(w * 0.22f, h * 0.96f)
-                quadraticTo(w * 0.50f, h * 0.72f, w * 0.78f, h * 0.96f)
-                close()
+                val shoulderPath = Path().apply {
+                    moveTo(w * 0.22f, h * 0.96f)
+                    quadraticTo(w * 0.50f, h * 0.72f, w * 0.78f, h * 0.96f)
+                    close()
+                }
+                drawPath(path = shoulderPath, color = iconTint.copy(alpha = 0.85f))
+
+                val crownPath = Path().apply {
+                    moveTo(w * 0.33f, h * 0.44f)
+                    lineTo(w * 0.38f, h * 0.24f)
+                    quadraticTo(w * 0.50f, h * 0.20f, w * 0.62f, h * 0.24f)
+                    lineTo(w * 0.67f, h * 0.44f)
+                    close()
+                }
+                drawPath(path = crownPath, color = iconTint)
+
+                drawRoundRect(
+                    color = iconTint,
+                    topLeft = Offset(w * 0.22f, h * 0.42f),
+                    size = Size(w * 0.56f, h * 0.065f),
+                    cornerRadius = CornerRadius(12f, 12f)
+                )
+
+                drawRoundRect(
+                    color = iconTint,
+                    topLeft = Offset(w * 0.30f, h * 0.53f),
+                    size = Size(w * 0.17f, h * 0.11f),
+                    cornerRadius = CornerRadius(6f, 6f)
+                )
+                drawRoundRect(
+                    color = iconTint,
+                    topLeft = Offset(w * 0.53f, h * 0.53f),
+                    size = Size(w * 0.17f, h * 0.11f),
+                    cornerRadius = CornerRadius(6f, 6f)
+                )
+                drawLine(
+                    color = iconTint,
+                    start = Offset(w * 0.46f, h * 0.56f),
+                    end = Offset(w * 0.54f, h * 0.56f),
+                    strokeWidth = w * 0.035f,
+                    cap = StrokeCap.Round
+                )
             }
-            drawPath(path = shoulderPath, color = iconTint.copy(alpha = 0.85f))
-
-            val crownPath = Path().apply {
-                moveTo(w * 0.33f, h * 0.44f)
-                lineTo(w * 0.38f, h * 0.24f)
-                quadraticTo(w * 0.50f, h * 0.20f, w * 0.62f, h * 0.24f)
-                lineTo(w * 0.67f, h * 0.44f)
-                close()
-            }
-            drawPath(path = crownPath, color = iconTint)
-
-            drawRoundRect(
-                color = iconTint,
-                topLeft = Offset(w * 0.22f, h * 0.42f),
-                size = Size(w * 0.56f, h * 0.065f),
-                cornerRadius = CornerRadius(12f, 12f)
-            )
-
-            drawRoundRect(
-                color = iconTint,
-                topLeft = Offset(w * 0.30f, h * 0.53f),
-                size = Size(w * 0.17f, h * 0.11f),
-                cornerRadius = CornerRadius(6f, 6f)
-            )
-            drawRoundRect(
-                color = iconTint,
-                topLeft = Offset(w * 0.53f, h * 0.53f),
-                size = Size(w * 0.17f, h * 0.11f),
-                cornerRadius = CornerRadius(6f, 6f)
-            )
-            drawLine(
-                color = iconTint,
-                start = Offset(w * 0.46f, h * 0.56f),
-                end = Offset(w * 0.54f, h * 0.56f),
-                strokeWidth = w * 0.035f,
-                cap = StrokeCap.Round
-            )
         }
 
         if (showVerifiedBadge) {
@@ -370,131 +390,21 @@ fun ExplorePresetArtwork(
     postType: String,
     modifier: Modifier = Modifier
 ) {
+    val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
     Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        when (presetUri) {
-            "preset://sunset_sky" -> {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF4A3B7C),
-                            Color(0xFF9E6B9E),
-                            Color(0xFFE8998D),
-                            Color(0xFF2D2346)
-                        )
-                    )
-                )
-                drawOval(
-                    color = Color(0xFFFFB5A7).copy(alpha = 0.32f),
-                    topLeft = Offset(w * 0.1f, h * 0.28f),
-                    size = Size(w * 0.8f, h * 0.16f)
-                )
-                drawOval(
-                    color = Color(0xFF3D2E5E).copy(alpha = 0.55f),
-                    topLeft = Offset(-w * 0.1f, h * 0.45f),
-                    size = Size(w * 0.9f, h * 0.22f)
-                )
-            }
-            "preset://coffee_cup" -> {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF5C4033),
-                            Color(0xFF8B654E),
-                            Color(0xFF3A261B)
-                        )
-                    )
-                )
-                drawOval(
-                    color = Color(0xFFEFECE6),
-                    topLeft = Offset(w * 0.16f, h * 0.40f),
-                    size = Size(w * 0.68f, h * 0.34f)
-                )
-                drawCircle(
-                    color = Color(0xFFFDFBF7),
-                    radius = w * 0.24f,
-                    center = Offset(w * 0.50f, h * 0.50f)
-                )
-                drawCircle(
-                    color = Color(0xFFC68B59),
-                    radius = w * 0.20f,
-                    center = Offset(w * 0.50f, h * 0.50f)
-                )
-                drawCircle(
-                    color = Color(0xFFFDFBF7),
-                    radius = w * 0.06f,
-                    center = Offset(w * 0.50f, h * 0.49f)
-                )
-            }
-            "preset://dream_silhouette" -> {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF5E648E),
-                            Color(0xFFB3889B),
-                            Color(0xFFE6A17E),
-                            Color(0xFF1B1926)
-                        )
-                    )
-                )
-                drawCircle(
-                    color = Color(0xFF0E0D14),
-                    radius = w * 0.11f,
-                    center = Offset(w * 0.50f, h * 0.46f)
-                )
-                val body = Path().apply {
-                    moveTo(w * 0.30f, h * 0.85f)
-                    quadraticTo(w * 0.34f, h * 0.58f, w * 0.50f, h * 0.58f)
-                    quadraticTo(w * 0.66f, h * 0.58f, w * 0.70f, h * 0.85f)
-                    close()
-                }
-                drawPath(path = body, color = Color(0xFF0E0D14))
-            }
-            "preset://birds_sky" -> {
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF8CA6DB),
-                            Color(0xFFD4A5B8),
-                            Color(0xFFF3C6A8),
-                            Color(0xFF2B283A)
-                        )
-                    )
-                )
-                val birdPositions = listOf(
-                    Offset(w * 0.35f, h * 0.35f),
-                    Offset(w * 0.52f, h * 0.28f),
-                    Offset(w * 0.64f, h * 0.42f),
-                    Offset(w * 0.44f, h * 0.48f)
-                )
-                birdPositions.forEach { pos ->
-                    drawArc(
-                        color = Color(0xFF2B283A),
-                        startAngle = 200f,
-                        sweepAngle = 140f,
-                        useCenter = false,
-                        topLeft = pos,
-                        size = Size(18f, 10f),
-                        style = Stroke(width = 3f)
-                    )
-                }
-            }
-            else -> {
-                val colors = when (postType) {
-                    "audio" -> listOf(Color(0xFF4F46E5), Color(0xFF7C3AED), Color(0xFF1E1B4B))
-                    "video" -> listOf(Color(0xFF3730A3), Color(0xFF6366F1), Color(0xFF0F172A))
-                    else -> listOf(Color(0xFF6E66FF), Color(0xFF9B8AFB), Color(0xFF2E266D))
-                }
-                drawRect(brush = Brush.verticalGradient(colors = colors))
-            }
+        val colors = when (postType) {
+            "audio" -> listOf(primary, secondary, Color(0xFF1E1B4B))
+            "video" -> listOf(secondary, primary, Color(0xFF0F172A))
+            else -> listOf(primary, secondary, Color(0xFF2E266D))
         }
+        drawRect(brush = Brush.verticalGradient(colors = colors))
     }
 }
 
 /**
  * Floating Rounded Bottom Navigation Bar (shared across Feed, Create, Explore, Activity, and Profile)
- * Synchronized with the active MaterialTheme primary color so any theme changes immediately apply to the navigation bar.
+ * Synchronized with the active MaterialTheme primary color and Compact Mode.
  */
 @Composable
 fun AnonymousnetBottomBar(
@@ -503,21 +413,27 @@ fun AnonymousnetBottomBar(
     onSelectTab: (MainTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isCompact = LocalCompactMode.current
     val activeColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
     val activePillBg = activeColor.copy(alpha = 0.14f)
+    val barHeight by animateDpAsState(
+        targetValue = if (isCompact) 58.dp else 64.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "bottom_bar_height"
+    )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
+            .padding(horizontal = if (isCompact) 14.dp else 20.dp, vertical = if (isCompact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(barHeight)
                 .shadow(
                     elevation = 16.dp,
                     shape = RoundedCornerShape(32.dp),
@@ -529,7 +445,7 @@ fun AnonymousnetBottomBar(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 10.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -538,8 +454,7 @@ fun AnonymousnetBottomBar(
                     selected = currentTab == MainTab.HOME,
                     activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.HOME) },
-                    testTag = "nav_home_button",
-                    contentDescription = "Home Feed"
+                    testTag = "nav_home_button"
                 ) {
                     Icon(
                         imageVector = if (currentTab == MainTab.HOME) Icons.Filled.Home else Icons.Outlined.Home,
@@ -554,8 +469,7 @@ fun AnonymousnetBottomBar(
                     selected = currentTab == MainTab.EXPLORE,
                     activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.EXPLORE) },
-                    testTag = "nav_explore_button",
-                    contentDescription = "Explore"
+                    testTag = "nav_explore_button"
                 ) {
                     Icon(
                         imageVector = if (currentTab == MainTab.EXPLORE) Icons.Filled.Explore else Icons.Outlined.Explore,
@@ -593,8 +507,7 @@ fun AnonymousnetBottomBar(
                     selected = currentTab == MainTab.ACTIVITY,
                     activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.ACTIVITY) },
-                    testTag = "nav_activity_button",
-                    contentDescription = "Activity and Messages"
+                    testTag = "nav_activity_button"
                 ) {
                     Box {
                         Icon(
@@ -621,8 +534,7 @@ fun AnonymousnetBottomBar(
                     selected = currentTab == MainTab.PROFILE,
                     activeBg = activePillBg,
                     onClick = { onSelectTab(MainTab.PROFILE) },
-                    testTag = "nav_profile_button",
-                    contentDescription = "Profile and Settings"
+                    testTag = "nav_profile_button"
                 ) {
                     Icon(
                         imageVector = if (currentTab == MainTab.PROFILE) Icons.Filled.Person else Icons.Outlined.PersonOutline,
@@ -642,14 +554,17 @@ private fun BottomBarIconItem(
     activeBg: Color,
     onClick: () -> Unit,
     testTag: String,
-    contentDescription: String,
     icon: @Composable () -> Unit
 ) {
+    val bgColor by animateColorAsState(
+        targetValue = if (selected) activeBg else Color.Transparent,
+        label = "nav_item_bg"
+    )
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (selected) activeBg else Color.Transparent)
+            .background(bgColor)
             .clickable(onClick = onClick)
             .testTag(testTag),
         contentAlignment = Alignment.Center

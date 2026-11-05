@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -76,7 +76,6 @@ import com.example.data.ConfessionPost
 import com.example.ui.FeedSegment
 import com.example.ui.UiState
 import com.example.ui.components.AnonymousHatAvatar
-import com.example.ui.components.ExplorePresetArtwork
 import com.example.ui.components.InbuiltAudioPlayer
 import com.example.ui.components.InbuiltVideoPlayer
 import com.example.ui.components.MediaSaveHelper
@@ -86,9 +85,9 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /**
- * Screen 2 — Home / Confession Feed
+ * Screen 2 — Home / Confession Feed (Anonymousnet v3.0)
  * Real-time synchronization for likes, comments, categories, video aspect ratio preservation,
- * follow/unfollow toggle, and Save to Device option in the 3-dot overflow menu.
+ * follow/unfollow toggle, custom gallery avatars, and Save to Device option.
  */
 @Composable
 fun HomeFeedScreen(
@@ -138,14 +137,30 @@ fun HomeFeedScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Anonymousnet",
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Anonymousnet",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = primaryColor.copy(alpha = 0.14f)
+                    ) {
+                        Text(
+                            text = "v3.0",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = primaryColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
 
                 IconButton(
                     onClick = onOpenNotifications,
@@ -209,7 +224,7 @@ fun HomeFeedScreen(
             }
         }
 
-        // 3. Category Filter Chips (Category-Based Browsing)
+        // 3. Category Filter Chips (18+ Categories)
         item {
             Row(
                 modifier = Modifier
@@ -456,7 +471,7 @@ private fun FeaturedConfessionCtaCard(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "No judgement, Just vibes.",
+                        text = "Unlimited words • No judgement, just vibes.",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                         color = Color.White.copy(alpha = 0.86f)
                     )
@@ -545,6 +560,7 @@ fun ConfessionPostCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize()
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(24.dp),
@@ -566,7 +582,10 @@ fun ConfessionPostCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AnonymousHatAvatar(size = 42.dp)
+                AnonymousHatAvatar(
+                    size = 42.dp,
+                    avatarUri = post.authorAvatarUri
+                )
                 Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -593,7 +612,7 @@ fun ConfessionPostCard(
                         }
                     }
                     Text(
-                        text = "${post.anonymousHandle} • ${formatRelativeTimestamp(post.createdAt, post.id)}",
+                        text = "${post.anonymousHandle} • ${formatRelativeTimestamp(post.createdAt)}",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -648,8 +667,7 @@ fun ConfessionPostCard(
                         expanded = menuExpanded,
                         onDismissRequest = { menuExpanded = false }
                     ) {
-                        // Save to Device Option (Preserves original quality video, audio, image)
-                        if (!post.mediaUri.isNullOrBlank() || post.type == "video" || post.type == "audio") {
+                        if (!post.mediaUri.isNullOrBlank()) {
                             DropdownMenuItem(
                                 text = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -663,7 +681,7 @@ fun ConfessionPostCard(
                                     scope.launch {
                                         MediaSaveHelper.saveMediaToDevice(
                                             context = context,
-                                            mediaUriString = post.mediaUri ?: "preset://${post.type}",
+                                            mediaUriString = post.mediaUri,
                                             mimeType = post.mediaMimeType,
                                             type = post.type,
                                             caption = post.mediaCaption ?: post.text
@@ -741,7 +759,7 @@ fun ConfessionPostCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Confession Body Text
+            // Confession Body Text (No word limit)
             Text(
                 text = post.text,
                 style = MaterialTheme.typography.bodyLarge.copy(
@@ -752,47 +770,39 @@ fun ConfessionPostCard(
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // In-built Video Player (preserves original aspect ratio), Audio Player, or Image Viewer
-            if (!post.mediaUri.isNullOrBlank() || post.type == "video" || post.type == "audio") {
+            // In-built Video Player, Audio Player, or Image Viewer
+            if (!post.mediaUri.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 when {
                     post.type.equals("video", ignoreCase = true) ||
                         post.mediaMimeType?.startsWith("video") == true -> {
                         InbuiltVideoPlayer(
-                            videoUri = post.mediaUri ?: "preset://dream_silhouette",
+                            videoUri = post.mediaUri,
                             caption = post.mediaCaption ?: post.text,
-                            durationSecHint = post.mediaDurationSec ?: 42L
+                            durationSecHint = post.mediaDurationSec ?: 30L
                         )
                     }
                     post.type.equals("audio", ignoreCase = true) ||
                         post.mediaMimeType?.startsWith("audio") == true -> {
                         InbuiltAudioPlayer(
-                            audioUri = post.mediaUri ?: "preset://birds_sky",
+                            audioUri = post.mediaUri,
                             title = post.mediaCaption ?: "Anonymous Voice Confession",
-                            durationSecHint = post.mediaDurationSec ?: 28L
+                            durationSecHint = post.mediaDurationSec ?: 15L
                         )
                     }
-                    !post.mediaUri.isNullOrBlank() -> {
+                    else -> {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(210.dp)
                                 .clip(RoundedCornerShape(18.dp))
                         ) {
-                            if (post.mediaUri.startsWith("preset://")) {
-                                ExplorePresetArtwork(
-                                    presetUri = post.mediaUri,
-                                    postType = post.type,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                AsyncImage(
-                                    model = post.mediaUri,
-                                    contentDescription = post.mediaCaption ?: "Confession attachment",
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
+                            AsyncImage(
+                                model = post.mediaUri,
+                                contentDescription = post.mediaCaption ?: "Confession attachment",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
                         }
                     }
                 }
@@ -906,7 +916,7 @@ fun ConfessionPostCard(
                     )
                     OutlinedTextField(
                         value = dmMessageText,
-                        onValueChange = { if (it.length <= 500) dmMessageText = it },
+                        onValueChange = { if (it.length <= 2000) dmMessageText = it },
                         placeholder = { Text("Write your message...") },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3
@@ -936,18 +946,8 @@ fun ConfessionPostCard(
     }
 }
 
-private fun formatRelativeTimestamp(timestamp: Timestamp?, fallbackId: String): String {
-    if (timestamp == null) {
-        return when {
-            fallbackId.contains("2h") -> "2h ago"
-            fallbackId.contains("3h") -> "3h ago"
-            fallbackId.contains("explore_1") -> "4h ago"
-            fallbackId.contains("explore_2") -> "5h ago"
-            fallbackId.contains("explore_3") -> "6h ago"
-            fallbackId.contains("explore_4") -> "8h ago"
-            else -> "Just now"
-        }
-    }
+private fun formatRelativeTimestamp(timestamp: Timestamp?): String {
+    if (timestamp == null) return "Just now"
     val diffMs = System.currentTimeMillis() - timestamp.toDate().time
     val minutes = TimeUnit.MILLISECONDS.toMinutes(diffMs)
     val hours = TimeUnit.MILLISECONDS.toHours(diffMs)

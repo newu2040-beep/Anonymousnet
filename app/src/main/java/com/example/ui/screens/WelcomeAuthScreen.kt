@@ -5,7 +5,6 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -206,10 +204,7 @@ fun signOutUser(
 }
 
 /**
- * Screen 1 — Welcome and Authentication
- * Matches the first reference panel: sparse white canvas, small brand mark at top-left,
- * moon/theme control at top-right, central hooded anonymous illustration in soft violet glow,
- * centered title & subtitle, three stacked rounded login actions, and Terms & Privacy Policy footer.
+ * Screen 1 — Welcome and Authentication (Anonymousnet v3.0)
  */
 @Composable
 fun WelcomeAuthScreen(
@@ -242,7 +237,6 @@ fun WelcomeAuthScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Subtle bottom lavender wave matching Screen 1 reference
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -280,7 +274,6 @@ fun WelcomeAuthScreen(
                 .align(Alignment.TopCenter),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top Row: Brand Globe Icon at left, Moon/Theme icon at right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -317,12 +310,24 @@ fun WelcomeAuthScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Hero Hooded Anonymous Illustration
             HoodedAnonymousHeroIllustration(size = 196.dp)
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // Title & Supporting Copy
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = AnonPrimaryViolet.copy(alpha = 0.12f)
+            ) {
+                Text(
+                    text = "VERSION 3.0",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = AnonPrimaryViolet,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
                 text = "Anonymousnet",
                 style = MaterialTheme.typography.headlineLarge.copy(
@@ -433,7 +438,7 @@ fun WelcomeAuthScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 2. Continue with Email (White pill button with dark Envelope icon)
+            // 2. Continue with Email
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -476,7 +481,7 @@ fun WelcomeAuthScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 3. Anonymous Login (Vivid Violet pill button with Anonymous Hat + Glasses icon)
+            // 3. Anonymous Login (Pseudonymous session backed by Google Credential Manager)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -552,7 +557,6 @@ fun WelcomeAuthScreen(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Footer: Terms & Privacy Policy
             val footerText = buildAnnotatedString {
                 withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)) {
                     append("By continuing, you agree to our\n")
@@ -603,7 +607,7 @@ fun WelcomeAuthScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "To enter Anonymousnet right now with full zero-trust Firestore security, continue with Google Sign-In below. Your email and name are never shown on public posts.",
+                        text = "To enter Anonymousnet v3.0 right now with full zero-trust Firestore security, continue with Google Sign-In below. Your email and name are never shown on public posts.",
                         style = MaterialTheme.typography.labelMedium,
                         color = AnonPrimaryViolet
                     )
@@ -699,7 +703,6 @@ private fun GoogleGLogoIcon(modifier: Modifier = Modifier) {
         val arcSize = Size(w - stroke, h - stroke)
         val topLeft = Offset(inset, inset)
 
-        // Red top arc
         drawArc(
             color = Color(0xFFEA4335),
             startAngle = 215f,
@@ -709,7 +712,6 @@ private fun GoogleGLogoIcon(modifier: Modifier = Modifier) {
             size = arcSize,
             style = Stroke(width = stroke, cap = StrokeCap.Butt)
         )
-        // Yellow left arc
         drawArc(
             color = Color(0xFFFBBC05),
             startAngle = 145f,
@@ -719,7 +721,6 @@ private fun GoogleGLogoIcon(modifier: Modifier = Modifier) {
             size = arcSize,
             style = Stroke(width = stroke, cap = StrokeCap.Butt)
         )
-        // Green bottom arc
         drawArc(
             color = Color(0xFF34A853),
             startAngle = 45f,
@@ -729,7 +730,6 @@ private fun GoogleGLogoIcon(modifier: Modifier = Modifier) {
             size = arcSize,
             style = Stroke(width = stroke, cap = StrokeCap.Butt)
         )
-        // Blue right arc + horizontal bar
         drawArc(
             color = Color(0xFF4285F4),
             startAngle = -15f,

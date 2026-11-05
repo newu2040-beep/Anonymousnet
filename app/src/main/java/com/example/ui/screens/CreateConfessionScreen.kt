@@ -3,10 +3,11 @@ package com.example.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,29 +26,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.MicNone
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -56,6 +49,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,21 +61,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
 import com.example.data.ConfessionPost
 import com.example.ui.DraftComposerState
+import com.example.ui.components.AnonymousHatAvatar
 import com.example.ui.components.CreateConfessionHeroIcon
 import com.example.ui.components.InbuiltAudioPlayer
 import com.example.ui.components.InbuiltVideoPlayer
@@ -88,10 +85,10 @@ import com.example.ui.components.VoiceConfessionRecorder
 import kotlinx.coroutines.delay
 
 /**
- * Screen 3 — Create Confession
- * Supports Customizable Category System (select existing or type custom category),
- * uncompressed original quality media attachment, Gallery Photo/Video Picker,
- * and high-bitrate voice note recorder.
+ * Screen 3 — Create Confession (Anonymousnet v3.0)
+ * - Unlimited words & characters (no word limits)
+ * - Category Selector (18+ categories + custom category input)
+ * - Photo Picker, Video Picker, Voice Recorder, and File Picker
  */
 @Composable
 fun CreateConfessionScreen(
@@ -106,20 +103,16 @@ fun CreateConfessionScreen(
     onAttachMedia: (uri: String?, caption: String, durationSec: Long?, mimeType: String?) -> Unit,
     onUpdateTopics: (String) -> Unit,
     onClearMedia: () -> Unit,
-    onSetAudioRecording: (Boolean, Int) -> Unit,
+    onSetAudioRecording: (isRecording: Boolean, seconds: Int) -> Unit,
     onPublish: (asDraft: Boolean) -> Unit,
     onLoadDraft: (ConfessionPost) -> Unit
 ) {
     val context = LocalContext.current
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val voiceRecorder = remember(context) { VoiceConfessionRecorder(context) }
-    var recordedUri by remember { mutableStateOf<String?>(null) }
-
-    var showDraftsAndOptionsDialog by remember { mutableStateOf(false) }
-    var showAudioRecorderModal by remember { mutableStateOf(false) }
-    var showOtherMetadataDialog by remember { mutableStateOf(false) }
+    var showDraftsDialog by remember { mutableStateOf(false) }
     var showCustomCategoryDialog by remember { mutableStateOf(false) }
     var customCategoryInput by remember { mutableStateOf("") }
+
+    val voiceRecorder = remember(context) { VoiceConfessionRecorder(context) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -127,7 +120,7 @@ fun CreateConfessionScreen(
         }
     }
 
-    // Gallery Photo Picker (preserves original quality)
+    // 1. Android Photo Picker for Images
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -137,13 +130,19 @@ fun CreateConfessionScreen(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {
+            } catch (_: SecurityException) {
             }
-            onAttachMedia(uri.toString(), "Original Quality Photo", null, "image/jpeg")
+            onSelectType("image")
+            onAttachMedia(
+                uri.toString(),
+                "Original Photo Moment",
+                null,
+                context.contentResolver.getType(uri) ?: "image/jpeg"
+            )
         }
     }
 
-    // Gallery Video Picker (preserves original resolution and bitrate)
+    // 2. Android Photo Picker for Videos
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -153,14 +152,20 @@ fun CreateConfessionScreen(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {
+            } catch (_: SecurityException) {
             }
-            onAttachMedia(uri.toString(), "Original Quality Video", 45L, "video/mp4")
+            onSelectType("video")
+            onAttachMedia(
+                uri.toString(),
+                "Original Video Confession",
+                null,
+                context.contentResolver.getType(uri) ?: "video/mp4"
+            )
         }
     }
 
-    // Document & Audio File Picker (preserves original audio/video files)
-    val openAnyFileLauncher = rememberLauncherForActivityResult(
+    // 3. System Document Picker for Audio or Other files
+    val documentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
@@ -169,40 +174,39 @@ fun CreateConfessionScreen(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {
+            } catch (_: SecurityException) {
             }
-            val detectedMime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-            when {
-                detectedMime.startsWith("video") -> {
-                    onSelectType("video")
-                    onAttachMedia(uri.toString(), "Original Video File", 60L, detectedMime)
-                }
-                detectedMime.startsWith("audio") -> {
-                    onSelectType("audio")
-                    onAttachMedia(uri.toString(), "Original Audio File", 45L, detectedMime)
-                }
-                detectedMime.startsWith("image") -> {
-                    onSelectType("image")
-                    onAttachMedia(uri.toString(), "Original Image File", null, detectedMime)
-                }
-                else -> {
-                    onSelectType("other")
-                    onAttachMedia(uri.toString(), "Original File ($detectedMime)", null, detectedMime)
-                }
+            val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val detectedType = when {
+                mime.startsWith("audio") -> "audio"
+                mime.startsWith("video") -> "video"
+                mime.startsWith("image") -> "image"
+                else -> "other"
             }
+            onSelectType(detectedType)
+            onAttachMedia(
+                uri.toString(),
+                uri.lastPathSegment ?: "Attached Confession Media",
+                if (detectedType == "audio") 30L else null,
+                mime
+            )
         }
     }
 
-    val audioPermissionLauncher = rememberLauncherForActivityResult(
+    // 4. Runtime Microphone Permission for Voice Recording
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        showAudioRecorderModal = true
+    ) { granted ->
+        if (granted) {
+            voiceRecorder.startRecording()
+            onSelectType("audio")
+            onSetAudioRecording(true, 0)
+        }
     }
 
-    // Live timer while recording audio confession
     LaunchedEffect(composerState.isRecordingAudio) {
         if (composerState.isRecordingAudio) {
-            var secs = 0
+            var secs = composerState.recordedSeconds
             while (composerState.isRecordingAudio) {
                 delay(1000L)
                 secs += 1
@@ -211,406 +215,532 @@ fun CreateConfessionScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 108.dp)
-            .testTag("create_confession_screen"),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // 1. Top Navigation Bar: Back Arrow `<` on left, Settings Gear on right
-        Row(
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val wordCount = remember(composerState.text) {
+        val trimmed = composerState.text.trim()
+        if (trimmed.isEmpty()) 0 else trimmed.split("\\s+".toRegex()).size
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .height(210.dp)
+                .align(Alignment.TopEnd)
         ) {
-            Surface(
-                modifier = Modifier
-                    .size(42.dp)
-                    .shadow(4.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.05f))
-                    .clip(CircleShape)
-                    .clickable(onClick = onBackClick)
-                    .testTag("create_back_button"),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        contentDescription = "Back to Feed",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .size(42.dp)
-                    .shadow(4.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.05f))
-                    .clip(CircleShape)
-                    .clickable { showDraftsAndOptionsDialog = true }
-                    .testTag("create_options_gear"),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Composer Options & Drafts",
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // 2. Centered Illustration
-        CreateConfessionHeroIcon()
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // 3. Header Texts
-        Text(
-            text = "Create Confession",
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Share anything anonymously",
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // 4. Media Type Selector Pills (Image, Video, Audio, Other)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            ComposerMediaTypePill(
-                label = "Image",
-                icon = Icons.Outlined.Image,
-                isSelected = composerState.selectedType == "image",
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    onSelectType("image")
-                    imagePickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                }
-            )
-
-            ComposerMediaTypePill(
-                label = "Video",
-                icon = Icons.Outlined.PlayArrow,
-                isSelected = composerState.selectedType == "video",
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    onSelectType("video")
-                    videoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
-                    )
-                }
-            )
-
-            ComposerMediaTypePill(
-                label = "Audio",
-                icon = Icons.Outlined.MicNone,
-                isSelected = composerState.selectedType == "audio",
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    onSelectType("audio")
-                    val hasMic = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.RECORD_AUDIO
-                    ) == PackageManager.PERMISSION_GRANTED
-                    if (hasMic) {
-                        showAudioRecorderModal = true
-                    } else {
-                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    }
-                }
-            )
-
-            ComposerMediaTypePill(
-                label = "Other",
-                icon = Icons.Filled.MoreHoriz,
-                isSelected = composerState.selectedType == "other",
-                modifier = Modifier.weight(1f),
-                onClick = {
-                    openAnyFileLauncher.launch(arrayOf("*/*"))
-                }
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        secondaryColor.copy(alpha = 0.28f),
+                        primaryColor.copy(alpha = 0.14f),
+                        Color.Transparent
+                    ),
+                    center = Offset(size.width * 0.88f, size.height * 0.22f),
+                    radius = size.width * 0.55f
+                ),
+                radius = size.width * 0.55f,
+                center = Offset(size.width * 0.88f, size.height * 0.22f)
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // 5. Category Selection Row (+ Custom Category button)
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp, bottom = 114.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 1. Top Navigation Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Category: ${composerState.selectedCategory}",
-                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Text(
-                    text = "+ Add Custom",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = primaryColor,
-                    modifier = Modifier.clickable { showCustomCategoryDialog = true }
-                )
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                availableCategories.forEach { cat ->
-                    val isCatSelected = composerState.selectedCategory.equals(cat, ignoreCase = true)
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSelectCategory(cat) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isCatSelected) primaryColor else MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = cat,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (isCatSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                Surface(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .shadow(6.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.06f))
+                        .clip(CircleShape)
+                        .clickable(onClick = onBackClick)
+                        .testTag("create_back_button"),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
+
+                Text(
+                    text = "Create Confession",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                if (drafts.isNotEmpty()) {
+                    TextButton(
+                        onClick = { showDraftsDialog = true },
+                        modifier = Modifier.testTag("open_drafts_button")
+                    ) {
+                        Text(
+                            text = "Drafts (${drafts.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = primaryColor
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(42.dp))
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // 6. Confession Input Card
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(
-                    elevation = 6.dp,
-                    shape = RoundedCornerShape(22.dp),
-                    spotColor = Color.Black.copy(alpha = 0.05f)
-                ),
-            shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.surface
-        ) {
+            // 2. Hero emblem
+            CreateConfessionHeroIcon()
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 3. Category Selector Row
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start
             ) {
-                Box(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Select Category",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    TextButton(onClick = { showCustomCategoryDialog = true }) {
+                        Text("+ Custom Category", style = MaterialTheme.typography.labelSmall, color = primaryColor)
+                    }
+                }
+
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(130.dp)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (composerState.text.isEmpty()) {
-                        Text(
-                            text = "Your confession...",
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    availableCategories.forEach { cat ->
+                        val isSelected = composerState.selectedCategory.equals(cat, ignoreCase = true)
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSelectCategory(cat) }
+                                .testTag("composer_cat_${cat.lowercase()}"),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) primaryColor else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = cat,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 4. Main Composer Card (Unlimited words & characters)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize()
+                    .shadow(
+                        elevation = 10.dp,
+                        shape = RoundedCornerShape(26.dp),
+                        spotColor = Color.Black.copy(alpha = 0.06f)
+                    ),
+                shape = RoundedCornerShape(26.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        AnonymousHatAvatar(size = 38.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextField(
+                            value = composerState.text,
+                            onValueChange = onUpdateText,
+                            placeholder = {
+                                Text(
+                                    text = "Share your confession freely with no word limits...",
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .testTag("confession_text_input"),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                lineHeight = 23.sp
                             )
                         )
                     }
-                    BasicTextField(
-                        value = composerState.text,
-                        onValueChange = onUpdateText,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .testTag("confession_input_field"),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        cursorBrush = SolidColor(primaryColor)
-                    )
-                }
 
-                Text(
-                    text = "${composerState.text.length}/500",
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
-        }
-
-        // Live attached media preview
-        if (!composerState.mediaUri.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(14.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                    // Live Word & Character Count (No Word Limits)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = primaryColor.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "Category: ${composerState.selectedCategory}",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = primaryColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                         Text(
-                            text = "Attached Media (${composerState.selectedType.uppercase()})",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = primaryColor
+                            text = "$wordCount words • ${composerState.text.length} chars (No limit)",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("character_counter_text")
                         )
-                        IconButton(onClick = onClearMedia, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Filled.Close, contentDescription = "Clear attachment", tint = MaterialTheme.colorScheme.error)
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 4-Tile Media Attachment Selector Row: Image, Video, Audio, Other
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        MediaAttachmentTile(
+                            label = "Image",
+                            icon = Icons.Filled.Image,
+                            selected = composerState.selectedType == "image",
+                            modifier = Modifier.weight(1f),
+                            testTag = "media_tile_image",
+                            onClick = {
+                                onSelectType("image")
+                                imagePickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                        )
+                        MediaAttachmentTile(
+                            label = "Video",
+                            icon = Icons.Filled.Videocam,
+                            selected = composerState.selectedType == "video",
+                            modifier = Modifier.weight(1f),
+                            testTag = "media_tile_video",
+                            onClick = {
+                                onSelectType("video")
+                                videoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                )
+                            }
+                        )
+                        MediaAttachmentTile(
+                            label = "Audio",
+                            icon = Icons.Filled.Mic,
+                            selected = composerState.selectedType == "audio",
+                            modifier = Modifier.weight(1f),
+                            testTag = "media_tile_audio",
+                            onClick = {
+                                onSelectType("audio")
+                                val hasMicPerm = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (hasMicPerm) {
+                                    if (!composerState.isRecordingAudio) {
+                                        val recordedUri = voiceRecorder.startRecording()
+                                        if (recordedUri != null) {
+                                            onSetAudioRecording(true, 0)
+                                        }
+                                    } else {
+                                        val savedUri = voiceRecorder.stopRecording()
+                                        val duration = composerState.recordedSeconds.coerceAtLeast(1).toLong()
+                                        onSetAudioRecording(false, 0)
+                                        if (savedUri != null) {
+                                            onAttachMedia(
+                                                savedUri,
+                                                "Recorded Voice Confession (${duration}s)",
+                                                duration,
+                                                "audio/mp4"
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+                        )
+                        MediaAttachmentTile(
+                            label = "Other",
+                            icon = Icons.Filled.AttachFile,
+                            selected = composerState.selectedType == "other",
+                            modifier = Modifier.weight(1f),
+                            testTag = "media_tile_other",
+                            onClick = {
+                                onSelectType("other")
+                                documentPickerLauncher.launch(arrayOf("*/*"))
+                            }
+                        )
+                    }
+
+                    // Active Voice Recording Banner
+                    if (composerState.isRecordingAudio) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = primaryColor.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Mic,
+                                        contentDescription = "Recording",
+                                        tint = primaryColor
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Recording Voice (${composerState.recordedSeconds}s)...",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = primaryColor
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        val savedUri = voiceRecorder.stopRecording()
+                                        val dur = composerState.recordedSeconds.coerceAtLeast(1).toLong()
+                                        onSetAudioRecording(false, 0)
+                                        if (savedUri != null) {
+                                            onAttachMedia(
+                                                savedUri,
+                                                "Recorded Voice Confession (${dur}s)",
+                                                dur,
+                                                "audio/mp4"
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Stop,
+                                        contentDescription = "Stop Recording",
+                                        tint = primaryColor
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Finish", color = primaryColor)
+                                }
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    // Attached Media Preview
+                    if (composerState.mediaUri != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            when (composerState.selectedType) {
+                                "video" -> {
+                                    InbuiltVideoPlayer(
+                                        videoUri = composerState.mediaUri,
+                                        caption = composerState.mediaCaption,
+                                        durationSecHint = composerState.mediaDurationSec ?: 24L
+                                    )
+                                }
+                                "audio" -> {
+                                    InbuiltAudioPlayer(
+                                        audioUri = composerState.mediaUri,
+                                        title = composerState.mediaCaption,
+                                        durationSecHint = composerState.mediaDurationSec ?: 15L
+                                    )
+                                }
+                                "image" -> {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(180.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                    ) {
+                                        AsyncImage(
+                                            model = composerState.mediaUri,
+                                            contentDescription = "Selected photo",
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                                else -> {
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Description,
+                                                contentDescription = null,
+                                                tint = primaryColor
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = composerState.mediaCaption.ifEmpty { "Attached File" },
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
-                    when (composerState.selectedType) {
-                        "video" -> {
-                            InbuiltVideoPlayer(
-                                videoUri = composerState.mediaUri,
-                                caption = composerState.mediaCaption.ifBlank { "Original Video Preview" }
-                            )
-                        }
-                        "audio" -> {
-                            InbuiltAudioPlayer(
-                                audioUri = composerState.mediaUri,
-                                title = composerState.mediaCaption.ifBlank { "Original Audio Voice Note" }
-                            )
-                        }
-                        else -> {
-                            Text(
-                                text = "Attached: ${composerState.mediaCaption}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .clickable(onClick = onClearMedia),
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.65f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Remove attachment",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-        // 7. Privacy Toggle Card: "Keep it anonymous"
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(
-                    elevation = 6.dp,
-                    shape = RoundedCornerShape(20.dp),
-                    spotColor = Color.Black.copy(alpha = 0.04f)
-                ),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Row(
+            // 5. "Keep it anonymous" Card with Toggle Switch
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .shadow(
+                        elevation = 6.dp,
+                        shape = RoundedCornerShape(22.dp),
+                        spotColor = Color.Black.copy(alpha = 0.05f)
+                    ),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(primaryColor.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.VisibilityOff,
-                            contentDescription = null,
-                            tint = primaryColor,
-                            modifier = Modifier.size(20.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AnonymousHatAvatar(size = 36.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Keep it anonymous",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Keep it anonymous",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold
+
+                    Switch(
+                        checked = composerState.keepAnonymous,
+                        onCheckedChange = onUpdateKeepAnonymous,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = primaryColor
                         ),
-                        color = MaterialTheme.colorScheme.onSurface
+                        modifier = Modifier.testTag("keep_anonymous_switch")
                     )
                 }
-
-                Switch(
-                    checked = composerState.keepAnonymous,
-                    onCheckedChange = onUpdateKeepAnonymous,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = primaryColor
-                    ),
-                    modifier = Modifier.testTag("keep_anonymous_switch")
-                )
             }
-        }
 
-        Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-        // 8. Bottom Action Button: "Post Anonymously"
-        Button(
-            onClick = { onPublish(false) },
-            enabled = !composerState.isPublishing && composerState.text.isNotBlank(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(54.dp)
-                .shadow(
-                    elevation = 12.dp,
-                    shape = RoundedCornerShape(27.dp),
-                    spotColor = primaryColor.copy(alpha = 0.40f)
-                )
-                .testTag("publish_confession_button"),
-            shape = RoundedCornerShape(27.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = primaryColor,
-                contentColor = Color.White
-            )
-        ) {
-            if (composerState.isPublishing) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(24.dp)
-                )
-            } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.Send,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(19.dp)
+            // 6. Primary CTA: "Post Anonymously"
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .shadow(
+                        elevation = 14.dp,
+                        shape = RoundedCornerShape(28.dp),
+                        spotColor = primaryColor.copy(alpha = 0.45f)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(secondaryColor, primaryColor)
+                        )
+                    )
+                    .clickable(enabled = !composerState.isPublishing) {
+                        onPublish(false)
+                    }
+                    .testTag("post_anonymously_submit_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                if (composerState.isPublishing) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Publishing...",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White
+                        )
+                    }
+                } else {
                     Text(
                         text = if (composerState.keepAnonymous) "Post Anonymously" else "Post Confession",
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -621,19 +751,37 @@ fun CreateConfessionScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Secondary Action: Save as Private Draft
+            OutlinedButton(
+                onClick = { onPublish(true) },
+                enabled = !composerState.isPublishing && composerState.text.isNotBlank(),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .testTag("save_draft_button")
+            ) {
+                Text(
+                    text = "Save Private Draft",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = primaryColor
+                )
+            }
         }
     }
 
-    // Custom Category Input Modal
     if (showCustomCategoryDialog) {
         AlertDialog(
             onDismissRequest = { showCustomCategoryDialog = false },
-            title = { Text("Create Custom Category", style = MaterialTheme.typography.titleLarge) },
+            title = { Text("Custom Category", style = MaterialTheme.typography.titleLarge) },
             text = {
                 OutlinedTextField(
                     value = customCategoryInput,
-                    onValueChange = { if (it.length <= 40) customCategoryInput = it },
-                    placeholder = { Text("e.g. Campus Life, Secret Crush, Coding") },
+                    onValueChange = { if (it.length <= 30) customCategoryInput = it },
+                    placeholder = { Text("e.g., Late Night, College, Music") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -641,16 +789,15 @@ fun CreateConfessionScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val trimmed = customCategoryInput.trim()
-                        if (trimmed.isNotBlank()) {
-                            onSelectCategory(trimmed)
-                            showCustomCategoryDialog = false
+                        if (customCategoryInput.isNotBlank()) {
+                            onSelectCategory(customCategoryInput.trim())
                             customCategoryInput = ""
+                            showCustomCategoryDialog = false
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
                 ) {
-                    Text("Select Category")
+                    Text("Select")
                 }
             },
             dismissButton = {
@@ -661,129 +808,36 @@ fun CreateConfessionScreen(
         )
     }
 
-    // Audio Voice Note Recording Dialog (High quality original voice capture)
-    if (showAudioRecorderModal) {
+    if (showDraftsDialog) {
         AlertDialog(
-            onDismissRequest = {
-                voiceRecorder.stopRecording()
-                onSetAudioRecording(false, 0)
-                showAudioRecorderModal = false
-            },
-            title = { Text("Record Anonymous Voice Note", style = MaterialTheme.typography.titleLarge) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Original high-bitrate voice capture (48kHz AAC). Your voice can be played smoothly by anyone on the community feed.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(if (composerState.isRecordingAudio) MaterialTheme.colorScheme.error else primaryColor)
-                            .clickable {
-                                if (composerState.isRecordingAudio) {
-                                    val uri = voiceRecorder.stopRecording()
-                                    onSetAudioRecording(false, 0)
-                                    recordedUri = uri
-                                } else {
-                                    val uri = voiceRecorder.startRecording()
-                                    recordedUri = uri
-                                    onSetAudioRecording(true, 0)
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (composerState.isRecordingAudio) Icons.Filled.Stop else Icons.Filled.Mic,
-                            contentDescription = if (composerState.isRecordingAudio) "Stop Recording" else "Start Recording",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-
-                    if (composerState.isRecordingAudio) {
-                        Text(
-                            text = "Recording: ${composerState.recordedSeconds}s",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    } else if (recordedUri != null) {
-                        Text(
-                            text = "Voice note ready to attach!",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = primaryColor
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val fileUri = recordedUri ?: voiceRecorder.stopRecording()
-                        onSetAudioRecording(false, 0)
-                        if (fileUri != null) {
-                            onAttachMedia(fileUri, "Anonymous Voice Note", 30L, "audio/mp4")
-                        }
-                        showAudioRecorderModal = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                ) {
-                    Text("Attach Voice Note")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    voiceRecorder.stopRecording()
-                    onSetAudioRecording(false, 0)
-                    showAudioRecorderModal = false
-                }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showDraftsAndOptionsDialog) {
-        AlertDialog(
-            onDismissRequest = { showDraftsAndOptionsDialog = false },
-            title = { Text("Drafts & Options", style = MaterialTheme.typography.titleLarge) },
+            onDismissRequest = { showDraftsDialog = false },
+            title = { Text("Saved Private Drafts", style = MaterialTheme.typography.titleLarge) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = {
-                            onPublish(true)
-                            showDraftsAndOptionsDialog = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Save Current Confession as Draft")
-                    }
-
-                    if (drafts.isNotEmpty()) {
-                        Text("Your Saved Drafts (${drafts.size}):", style = MaterialTheme.typography.labelLarge)
-                        drafts.forEach { draft ->
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        onLoadDraft(draft)
-                                        showDraftsAndOptionsDialog = false
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
+                    drafts.forEach { draft ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    onLoadDraft(draft)
+                                    showDraftsDialog = false
+                                },
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = draft.text.take(60),
+                                    text = draft.text,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(10.dp)
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Category: ${draft.category} • Tap to load",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = primaryColor
                                 )
                             }
                         }
@@ -791,8 +845,8 @@ fun CreateConfessionScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDraftsAndOptionsDialog = false }) {
-                    Text("Done")
+                TextButton(onClick = { showDraftsDialog = false }) {
+                    Text("Close")
                 }
             }
         )
@@ -800,51 +854,59 @@ fun CreateConfessionScreen(
 }
 
 @Composable
-private fun ComposerMediaTypePill(
+private fun MediaAttachmentTile(
     label: String,
     icon: ImageVector,
-    isSelected: Boolean,
+    selected: Boolean,
     modifier: Modifier = Modifier,
+    testTag: String,
     onClick: () -> Unit
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
+    val bgColor = if (selected) {
+        primaryColor.copy(alpha = 0.14f)
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+    }
 
-    Surface(
+    Box(
         modifier = modifier
-            .height(50.dp)
-            .shadow(
-                elevation = if (isSelected) 6.dp else 2.dp,
-                shape = RoundedCornerShape(16.dp),
-                spotColor = if (isSelected) primaryColor.copy(alpha = 0.35f) else Color.Transparent
-            )
+            .height(68.dp)
             .clip(RoundedCornerShape(16.dp))
+            .background(bgColor)
+            .then(
+                if (selected) {
+                    Modifier.border(
+                        width = 1.8.dp,
+                        color = primaryColor,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .clickable(onClick = onClick)
-            .testTag("composer_pill_${label.lowercase()}"),
-        shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) primaryColor else MaterialTheme.colorScheme.surface,
-        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+            .testTag(testTag),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isSelected) Color.White else primaryColor,
-                modifier = Modifier.size(19.dp)
+                tint = if (selected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium.copy(
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 12.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                 ),
-                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                color = if (selected) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
